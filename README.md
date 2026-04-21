@@ -11,6 +11,7 @@ Obsidian vault management and automation scripts integrated with Claude Code ski
 - **obsidian-metadata-validator** - Validate YAML frontmatter metadata
 - **obsidian-tag-normalizer** - Normalize tags and detect similar tags
 - **vault-lint** - Detect orphan notes, stale notes, and missing cross-references
+- **vault-management** - Weekly vault report generation (clipping alerts, link health, concept stats)
 
 ### Knowledge Network
 
