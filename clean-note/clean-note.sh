@@ -5,12 +5,16 @@
 # 용도: Gemini/ChatGPT 등에서 복사한 노트의 불필요한 요소 제거
 #
 # 기능:
-#   1. 문장 끝 불필요한 숫자 제거 (마침표 앞, 줄 끝)
-#   2. <br> 태그 제거
-#   3. +숫자 라인 제거 (+1, +2 등)
-#   4. 연속 빈 줄 정리 (2줄 이상 → 1줄)
-#   5. Gemini cite 패턴 제거 ([cite: X], [cite: X-Y], [cite_start] 등)
-#   6. 코드 블록 앞 언어 라벨 제거 (Bash, JSON, YAML 등 별도 줄)
+#   1. Gemini cite 패턴 제거 ([cite: X], [cite_start] 등)
+#   2. 코드 블록 앞 언어 라벨 제거 (Bash, JSON, YAML 등 별도 줄)
+#   3. <br> 태그 제거
+#   4. +숫자 라인 제거 (+1, +2 등)
+#   5. 문장 끝 불필요한 숫자 제거 (마침표 앞, 줄 끝)
+#   6. 연속 빈 줄 정리 (2줄 이상 → 1줄)
+#   7. 줄 끝 공백 제거
+#
+# ⚠️  코드 블록(```) 내부는 숫자 제거 규칙을 적용하지 않습니다.
+#     변수 할당(PORT=8000), 함수 인자(sleep 2) 등 코드가 손상되지 않습니다.
 #
 # 사용법:
 #   clean-note.sh <파일경로>
@@ -18,7 +22,8 @@
 #   clean-note.sh <파일경로> --backup     # 백업 후 정리
 #
 # 작성: 이상훈
-# 버전: 1.2.0
+# 버전: 1.3.0
+# 변경: 코드 블록 내부 보호 (awk 기반 상태 추적으로 전환)
 #===============================================================================
 
 # 색상 정의
@@ -53,22 +58,6 @@ log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
-# 연속 빈 줄 제거 함수 (macOS 호환)
-squeeze_blank_lines() {
-    awk '
-    BEGIN { blank_count = 0 }
-    /^[[:space:]]*$/ {
-        blank_count++
-        if (blank_count <= 1) print
-        next
-    }
-    {
-        blank_count = 0
-        print
-    }
-    '
-}
-
 # 메인 정리 함수
 clean_note() {
     local file="$1"
@@ -84,7 +73,7 @@ clean_note() {
 
     log_info "파일 분석 중: $file"
 
-    # 원본 내용 읽기
+    # 원본 라인 수
     local original_lines
     original_lines=$(wc -l < "$file" | tr -d ' ')
 
@@ -92,30 +81,80 @@ clean_note() {
     local tmpfile
     tmpfile=$(mktemp)
 
-    # 정리 작업 수행
+    # ─────────────────────────────────────────────────────────────────────────
+    # Phase 1: 코드 블록과 무관한 안전한 패턴 제거 (sed)
+    #   - Gemini cite 패턴: 코드 안에 나타나지 않음
+    #   - 한글 뒤 숫자: 한글은 코드에 없으므로 안전
+    # ─────────────────────────────────────────────────────────────────────────
     cat "$file" | \
-        # 1. Gemini cite 패턴 제거: [cite: 4], [cite: 1-5], [cite: 1, 2, 3]
         sed -E 's/\[cite:[[:space:]]*[0-9, -]+\]//g' | \
-        # 2. Gemini cite_start 태그 제거: [cite_start]
         sed 's/\[cite_start\]//g' | \
-        # 3. 코드 블록 앞 언어 라벨 제거 (별도 줄): Bash, JSON, YAML, Plaintext 등
-        sed -E '/^[[:space:]]*(Bash|JSON|YAML|Plaintext|Python|Shell|JavaScript|TypeScript|HTML|CSS|SQL|XML|Go|Rust|Java|C\+\+|Ruby|PHP|Perl)[[:space:]]*$/d' | \
-        # 4. 마침표 앞 불필요한 숫자 제거: "합니다123." → "합니다."
         sed -E 's/([가-힣])[0-9]+\./\1./g' | \
-        # 5. 괄호+공백 뒤 숫자+마침표: ") 123." → ")"
-        sed -E 's/\)[[:space:]]*[0-9]+\./)./g' | \
-        # 6. 줄 끝 공백+숫자 제거: "내용 123" → "내용"
-        sed -E 's/[[:space:]]+[0-9]+[[:space:]]*$//' | \
-        # 7. 줄 끝 숫자만 (4자리 이상): "내용1234" → "내용"
-        sed -E 's/[0-9]{4,}[[:space:]]*$//' | \
-        # 8. <br> 태그 제거
-        sed 's/<br[[:space:]]*\/*>//gi' | \
-        # 9. +숫자 라인 제거
-        sed '/^[[:space:]]*+[0-9][0-9]*[[:space:]]*$/d' | \
-        # 10. 줄 끝 공백 제거
-        sed 's/[[:space:]]*$//' | \
-        # 11. 연속 빈 줄 정리 (2줄 이상 → 1줄)
-        squeeze_blank_lines > "$tmpfile"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Phase 2: 코드 블록 인식 정리 (awk)
+    #   - ``` 감지로 in_code 상태 추적
+    #   - 코드 블록 내부: trailing space만 제거, 숫자 제거 규칙 적용 안 함
+    #   - 코드 블록 외부: 모든 정리 규칙 적용
+    # ─────────────────────────────────────────────────────────────────────────
+    awk '
+    BEGIN { in_code = 0; blank_count = 0 }
+
+    # ``` 감지: 코드 블록 진입/탈출 전환
+    /^[[:space:]]*```/ {
+        in_code = !in_code
+        sub(/[[:space:]]+$/, "")
+        blank_count = 0
+        print
+        next
+    }
+
+    # ── 코드 블록 내부 ────────────────────────────────────────────────────
+    # trailing space만 제거. 숫자, 태그 등 모든 내용 보호.
+    in_code {
+        sub(/[[:space:]]+$/, "")
+        print
+        next
+    }
+
+    # ── 코드 블록 외부 ────────────────────────────────────────────────────
+
+    # 빈 줄: 연속 2줄 이상이면 1줄로 압축
+    /^[[:space:]]*$/ {
+        blank_count++
+        if (blank_count <= 1) print
+        next
+    }
+
+    # 텍스트 줄: 모든 정리 규칙 적용
+    {
+        blank_count = 0
+
+        # 코드 블록 앞 언어 라벨 제거 (단독 줄)
+        if (/^[[:space:]]*(Bash|JSON|YAML|Plaintext|Python|Shell|JavaScript|TypeScript|HTML|CSS|SQL|XML|Go|Rust|Java|Ruby|PHP|Perl)[[:space:]]*$/) next
+
+        # <br> 태그 제거
+        gsub(/<br[[:space:]]*\/?>/, "")
+
+        # 괄호 뒤 숫자+마침표 제거: ") 123." → ")."
+        gsub(/\)[[:space:]]*[0-9]+\./, ").")
+
+        # +숫자 단독 라인 제거: "+1", "+2" 등
+        if (/^[[:space:]]*\+[0-9]+[[:space:]]*$/) next
+
+        # 줄 끝 공백+숫자 제거: "내용 123" → "내용"
+        sub(/[[:space:]]+[0-9]+[[:space:]]*$/, "")
+
+        # 줄 끝 4자리 이상 숫자 제거: "내용1234" → "내용"
+        # {4,} 대신 명시적 반복으로 BSD awk 호환
+        sub(/[0-9][0-9][0-9][0-9][0-9]*[[:space:]]*$/, "")
+
+        # 줄 끝 공백 제거
+        sub(/[[:space:]]+$/, "")
+
+        print
+    }
+    ' > "$tmpfile"
 
     # 결과 라인 수
     local final_lines
@@ -162,27 +201,14 @@ main() {
     local backup=false
     local verbose=false
 
-    # 인자가 없으면 사용법 출력
     [[ $# -eq 0 ]] && usage
 
-    # 인자 파싱
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help)
-                usage
-                ;;
-            --dry-run)
-                dry_run=true
-                shift
-                ;;
-            --backup)
-                backup=true
-                shift
-                ;;
-            --verbose)
-                verbose=true
-                shift
-                ;;
+            -h|--help)   usage ;;
+            --dry-run)   dry_run=true; shift ;;
+            --backup)    backup=true; shift ;;
+            --verbose)   verbose=true; shift ;;
             -*)
                 log_error "알 수 없는 옵션: $1"
                 exit 1
@@ -199,13 +225,11 @@ main() {
         esac
     done
 
-    # 파일 인자 확인
     if [[ -z "$file" ]]; then
         log_error "파일 경로를 지정해주세요."
         exit 1
     fi
 
-    # 정리 실행
     clean_note "$file" "$dry_run" "$backup" "$verbose"
 }
 

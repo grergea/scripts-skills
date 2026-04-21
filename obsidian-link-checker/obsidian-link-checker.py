@@ -64,6 +64,9 @@ class LinkHealthChecker:
         self.excluded_dirs = {'04_Archive', '05_Attachments', '06_Metadata/Templates',
                              '.git', '.obsidian', '.trash', '.claude'}
 
+        # 파일 인덱스에서 제외할 파일명 (설정 파일, 링크 타겟으로 부적절)
+        self.excluded_files = {'CLAUDE', 'GEMINI', 'AGENTS'}
+
         # 결과 저장
         self.all_files: Dict[str, Path] = {}  # filename -> full_path
         self.all_links: List[WikiLink] = []
@@ -85,6 +88,10 @@ class LinkHealthChecker:
             # 파일명 (확장자 제외)
             filename = md_file.stem
 
+            # 설정 파일 제외
+            if filename in self.excluded_files:
+                continue
+
             # 중복 파일명 처리
             if filename in self.all_files:
                 # 이미 존재하면 리스트로 변환
@@ -100,9 +107,8 @@ class LinkHealthChecker:
         """파일에서 위키링크 추출 (scope 지정 시 해당 폴더만)"""
         print(f"{Colors.OKBLUE}🔗 위키링크 추출 중...{Colors.ENDC}")
 
-        # 위키링크 패턴 (코드 블록 제외)
         link_pattern = re.compile(r'\[\[([^\]]+)\]\]')
-        code_block_pattern = re.compile(r'```[\s\S]*?```|`[^`]+`')
+        inline_code_pattern = re.compile(r'`[^`]+`')
 
         # scope 지정 시 해당 폴더의 파일만 처리
         scope_path = self.vault_path / self.scope if self.scope else None
@@ -119,11 +125,18 @@ class LinkHealthChecker:
                     with open(path, 'r', encoding='utf-8') as f:
                         lines = f.readlines()
 
+                    in_code_block = False
                     for line_num, line in enumerate(lines, 1):
-                        # 코드 블록 제거
-                        line_no_code = code_block_pattern.sub('', line)
+                        # 멀티라인 코드 블록 상태 추적
+                        if line.strip().startswith('```'):
+                            in_code_block = not in_code_block
+                            continue
+                        if in_code_block:
+                            continue
 
-                        # 위키링크 추출
+                        # 인라인 코드 제거 후 위키링크 추출
+                        line_no_code = inline_code_pattern.sub('', line)
+
                         for match in link_pattern.finditer(line_no_code):
                             raw_link = match.group(0)
 
