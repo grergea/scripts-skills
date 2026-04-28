@@ -22,17 +22,20 @@ EXCLUDE_DIRS = {
     "04_Archive", "05_Attachments", "06_Metadata",
     ".git", ".obsidian", ".trash", ".claude", "node_modules",
     "scripts-repo", "scripts-skills", "scripts-finance",
-    "ons-api-tools", "scripts-skills"
+    "ons-api-tools",
+    # ── 고아 검사 제외 (링크 안 받는 게 정상) ──
+    "03_Resources/Index",      # 색인 폴더
+    "06_Metadata/Templates",    # 템플릿
+    "00_Inbox",                 # 받은 편지함
+    "skills-gws",               # GWS 스킬 저장소
+    # ── 개인 참고 기록 (지식 그래프 노드 아님) ──
+    "02_Areas/개인_금융",        # 투자 기록 — 링크 불필요
+    "02_Areas/개인_여행",        # 일정표 — 링크 불필요
+    "02_Areas/개인_성장",        # PBL/수업계획서 — 링크 불필요
+    "02_Areas/개인_홈",          # 가전/차량 리뷰 — 링크 불필요
 }
 
 EXCLUDE_FILES = {"hot.md", "Dashboard.md", "GEMINI.md", "CLAUDE.md"}
-
-# 이 폴더의 노트는 고아 검사에서 제외 (Index, template 등은 링크 안 받는 게 정상)
-ORPHAN_EXCLUDE_DIRS = {
-    "03_Resources/Index",
-    "06_Metadata/Templates",
-    "00_Inbox",
-}
 
 DEFAULT_STALE_DAYS = 180  # 6개월
 
@@ -52,9 +55,11 @@ def is_excluded(path: Path, vault: Path) -> bool:
 
 
 def is_orphan_excluded(path: Path, vault: Path) -> bool:
-    rel = str(path.relative_to(vault))
-    for ex in ORPHAN_EXCLUDE_DIRS:
-        if rel.startswith(ex):
+    """EXCLUDE_DIRS의 각 항목을 경로 prefix로匹配 — 하위 폴더명 전체 비교"""
+    rel = path.relative_to(vault)
+    rel_str = str(rel)
+    for ex in EXCLUDE_DIRS:
+        if rel_str.startswith(ex):
             return True
     return False
 
