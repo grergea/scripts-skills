@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 VAULT = Path("/Users/shlee/leesh/mynotes")
-OUTPUT_DIR = VAULT / "06_Metadata/Reference"
+OUTPUT_DIR = VAULT / "06_Metadata/Concepts"
 CONCEPT_DIRS = [
     VAULT / "03_Resources/Concepts_Tech",
     VAULT / "03_Resources/Concepts_Personal",
