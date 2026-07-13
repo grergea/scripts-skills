@@ -39,6 +39,7 @@ EXCLUDE_SCAN_DIRS = {
     "scripts-local",
     "ons-api-tools",
     "skills-gws",
+    "01_Projects",  # 기한이 있는 활성 프로젝트 — 완료 시 04_Archive로 이동, 외부 도구 스캐폴딩 포함
     "04_Archive",
     "05_Attachments",
 }
