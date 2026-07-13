@@ -2,11 +2,12 @@
 """
 vault-report.py
 볼트 현황 리포트 생성기. /lint 스킬의 Phase 1 입력 소스 (수동 실행).
+리포트는 월 단위(Concept_Review_YYYY-MM.md)로 관리 — 같은 달 재실행 시 기존 파일 갱신.
 - 클리핑 소화 알림
 - Personal/Tech 비율 체크
 - #isolated Concept 노트 카운트
 - 깨진 위키링크 카운트
-- 이전 리포트 status → completed 갱신
+- 이전 달 리포트 status → completed 갱신
 """
 
 import re
@@ -28,6 +29,7 @@ CLIPPING_DIRS = [
 VAULT_LINT_PATH = VAULT / "scripts-skills/vault-lint/vault-lint.py"
 
 today = date.today()
+month_str = today.strftime("%Y-%m")
 month_ago = today - timedelta(days=30)
 
 
@@ -180,19 +182,21 @@ def section_actions(
 
 
 def close_previous_reports():
-    """이전 Concept Review 파일의 status를 completed로 갱신"""
-    for f in OUTPUT_DIR.glob("Concept Review *.md"):
-        if f.stem == f"Concept Review {today}":
-            continue
-        text = f.read_text(encoding="utf-8")
-        if "status: inProgress" in text:
-            updated = text.replace("status: inProgress", "status: completed")
-            f.write_text(updated, encoding="utf-8")
-            print(f"✅ 이전 리포트 완료 처리: {f.name}")
+    """이전 달 리포트의 status를 completed로 갱신 (구 일 단위 파일 포함)"""
+    patterns = ["Concept_Review_*.md", "Concept Review 20*.md"]
+    for pattern in patterns:
+        for f in OUTPUT_DIR.glob(pattern):
+            if f.stem == f"Concept_Review_{month_str}":
+                continue
+            text = f.read_text(encoding="utf-8")
+            if "status: inProgress" in text:
+                updated = text.replace("status: inProgress", "status: completed")
+                f.write_text(updated, encoding="utf-8")
+                print(f"✅ 이전 리포트 완료 처리: {f.name}")
 
 
 def main():
-    print("📊 볼트 주간 리포트 생성 중...")
+    print(f"📊 볼트 현황 리포트 생성 중... ({month_str})")
 
     clips = collect_clippings()
     tech, personal = count_concepts()
@@ -207,21 +211,30 @@ def main():
 
     close_previous_reports()
 
+    output_path = OUTPUT_DIR / f"Concept_Review_{month_str}.md"
+
+    # 같은 달 재실행 시 기존 created 날짜 보존
+    created = today
+    if output_path.exists():
+        prev = get_created(output_path.read_text(encoding="utf-8"))
+        if prev:
+            created = prev
+
     frontmatter = f"""---
 type: note
 author:
   - "[[이상훈]]"
-created: {today}
+created: {created}
 updated: {today}
 tags:
   - vault-review
-  - weekly
+  - monthly
 status: inProgress
 ---"""
 
-    header = f"""# 볼트 주간 리포트 - {today}
+    header = f"""# 볼트 현황 리포트 - {month_str}
 
-> 자동 생성 리포트입니다. 검토 후 권장 액션을 실행하세요.
+> 자동 생성 리포트입니다. 검토 후 권장 액션을 실행하세요. (최종 갱신: {today})
 """
 
     body = "\n\n".join(
@@ -235,7 +248,6 @@ status: inProgress
 
     content = frontmatter + "\n\n" + header + "\n" + body + "\n"
 
-    output_path = OUTPUT_DIR / f"Concept Review {today}.md"
     output_path.write_text(content, encoding="utf-8")
     print(f"✅ 리포트 생성 완료: {output_path}")
 
