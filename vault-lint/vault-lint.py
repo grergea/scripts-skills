@@ -305,6 +305,14 @@ def build_link_index(records: list) -> dict:
     return index
 
 
+def _resolve(index: dict, target: str):
+    """경로 포함 타겟은 basename으로도 조회 (고아 판정과 동일한 정규화)"""
+    matches = index.get(target)
+    if matches or "/" not in target:
+        return matches
+    return index.get(Path(target).stem)
+
+
 def count_broken_links(records: list) -> int:
     """깨진 위키링크 수만 조용히 계산 (외부 스크립트용, 예: vault-report)"""
     index = build_link_index(records)
@@ -312,7 +320,7 @@ def count_broken_links(records: list) -> int:
         1
         for rec in records
         for _, target, _, _ in rec.links
-        if "../" not in target and target not in index
+        if "../" not in target and not _resolve(index, target)
     )
 
 
@@ -329,7 +337,7 @@ def check_links(records: list, scope: str) -> dict:
                 continue  # 상대경로 링크는 검증 제외 (고아 판정에는 반영됨)
             total_links += 1
             entry = (rec.rel, line_num, target, section, raw)
-            matches = index.get(target)
+            matches = _resolve(index, target)
             if not matches:
                 broken.append(entry)
             elif len(matches) > 1:
@@ -410,9 +418,7 @@ def _has_section(content: str, section: str) -> bool:
 
 def check_meta(records: list, scope: str) -> dict:
     targets = [
-        r
-        for r in records
-        if in_scope(r, scope) and r.path.name not in NON_NOTE_FILES
+        r for r in records if in_scope(r, scope) and r.path.name not in NON_NOTE_FILES
     ]
     issues = []  # (rel, issue_type, field, message)
     no_frontmatter = []
