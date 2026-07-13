@@ -14,7 +14,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-VAULT = Path("/Users/shlee/leesh/mynotes")
+VAULT = Path("/Users/shlee/mynotes")
 OUTPUT_DIR = VAULT / "06_Metadata/Concepts"
 CONCEPT_DIRS = [
     VAULT / "03_Resources/Concepts_Tech",
@@ -25,7 +25,7 @@ CLIPPING_DIRS = [
     VAULT / "00_Inbox/Clippings_Git",
     VAULT / "00_Inbox/Clippings_YouTube",
 ]
-LINK_CHECKER_DIR = VAULT / "scripts-skills/obsidian-link-checker"
+VAULT_LINT_PATH = VAULT / "scripts-skills/vault-lint/vault-lint.py"
 
 today = date.today()
 month_ago = today - timedelta(days=30)
@@ -37,7 +37,7 @@ def get_created(text: str) -> date | None:
         return None
     for line in m.group(1).splitlines():
         if line.startswith("created:"):
-            raw = line.split(":", 1)[1].strip().strip('"\'')
+            raw = line.split(":", 1)[1].strip().strip("\"'")
             try:
                 return date.fromisoformat(raw[:10])
             except ValueError:
@@ -54,18 +54,24 @@ def collect_clippings() -> list[dict]:
             text = f.read_text(encoding="utf-8", errors="ignore")
             created = get_created(text)
             if created and created <= month_ago:
-                clips.append({
-                    "name": f.stem,
-                    "created": created,
-                    "days_old": (today - created).days,
-                    "folder": d.name,
-                })
+                clips.append(
+                    {
+                        "name": f.stem,
+                        "created": created,
+                        "days_old": (today - created).days,
+                        "folder": d.name,
+                    }
+                )
     return sorted(clips, key=lambda x: x["created"])
 
 
 def count_concepts() -> tuple[int, int]:
-    tech = sum(1 for _ in CONCEPT_DIRS[0].glob("*.md")) if CONCEPT_DIRS[0].exists() else 0
-    personal = sum(1 for _ in CONCEPT_DIRS[1].glob("*.md")) if CONCEPT_DIRS[1].exists() else 0
+    tech = (
+        sum(1 for _ in CONCEPT_DIRS[0].glob("*.md")) if CONCEPT_DIRS[0].exists() else 0
+    )
+    personal = (
+        sum(1 for _ in CONCEPT_DIRS[1].glob("*.md")) if CONCEPT_DIRS[1].exists() else 0
+    )
     return tech, personal
 
 
@@ -83,28 +89,23 @@ def count_isolated() -> int:
 
 
 def count_broken_links() -> int:
-    """obsidian-link-checker를 import해 깨진 링크 수 반환 (출력 억제)"""
-    if not LINK_CHECKER_DIR.exists():
+    """vault-lint를 import해 깨진 링크 수 반환 (출력 억제)"""
+    if not VAULT_LINT_PATH.exists():
         return -1
     try:
         import importlib.util
         import io
         from contextlib import redirect_stdout, redirect_stderr
 
-        spec = importlib.util.spec_from_file_location(
-            "obsidian_link_checker",
-            LINK_CHECKER_DIR / "obsidian-link-checker.py",
-        )
+        spec = importlib.util.spec_from_file_location("vault_lint", VAULT_LINT_PATH)
         mod = importlib.util.module_from_spec(spec)
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             spec.loader.exec_module(mod)
-            checker = mod.LinkHealthChecker(str(VAULT))
-            checker.scan_vault()
-            checker.extract_links()
-            checker.validate_links()
-        return len(checker.broken_links)
+            records = mod.scan_vault(VAULT)
+            broken = mod.count_broken_links(records)
+        return broken
     except Exception as e:
-        print(f"⚠️  link-checker 실행 실패: {e}", file=sys.stderr)
+        print(f"⚠️  vault-lint 실행 실패: {e}", file=sys.stderr)
         return -1
 
 
@@ -114,7 +115,9 @@ def section_clippings(clips: list[dict]) -> str:
         lines.append("| 파일명 | 수집일 | 경과일 | 폴더 |")
         lines.append("|--------|--------|--------|------|")
         for c in clips:
-            lines.append(f"| {c['name']} | {c['created']} | {c['days_old']}일 | {c['folder']} |")
+            lines.append(
+                f"| {c['name']} | {c['created']} | {c['days_old']}일 | {c['folder']} |"
+            )
     else:
         lines.append("미처리 클리핑 없음 ✅")
     return "\n".join(lines)
@@ -141,21 +144,26 @@ def section_link_health(broken: int, isolated: int) -> str:
         "## 링크 건강도\n",
         "| 항목 | 현황 | 권장 액션 |",
         "|------|------|---------|",
-        f"| 깨진 위키링크 | {broken_status} | `/link-health fix:true` |",
-        f"| #isolated Concept | {isolated_status} | `/note-linker` |",
+        f"| 깨진 위키링크 | {broken_status} | `/lint fix:links` |",
+        f"| #isolated Concept | {isolated_status} | `@concept-analyzer` → `/autoresearch` |",
     ]
     if broken == -1:
-        lines.append("\n> ⚠️ link-checker 실행 실패 — 수동으로 `/link-health` 실행 필요")
+        lines.append(
+            "\n> ⚠️ vault-lint 실행 실패 — 수동으로 `/lint checks:links` 실행 필요"
+        )
     return "\n".join(lines)
 
 
-def section_actions(clips: list[dict], tech: int, personal: int,
-                    broken: int, isolated: int) -> str:
+def section_actions(
+    clips: list[dict], tech: int, personal: int, broken: int, isolated: int
+) -> str:
     actions = []
     if broken > 0:
-        actions.append(f"- 깨진 링크 수정: {broken}개 → `/link-health fix:true`")
+        actions.append(f"- 깨진 링크 수정: {broken}개 → `/lint fix:links`")
     if isolated > 0:
-        actions.append(f"- 고립 Concept 연결: {isolated}개 → `/note-linker`")
+        actions.append(
+            f"- 고립 Concept 연결: {isolated}개 → `@concept-analyzer` → `/autoresearch`"
+        )
     for c in clips[:5]:
         actions.append(f"- 클리핑 소화: `{c['name']}` ({c['days_old']}일 경과)")
     if personal < tech * 0.15:
@@ -189,7 +197,9 @@ def main():
     clips = collect_clippings()
     tech, personal = count_concepts()
     isolated = count_isolated()
-    print(f"  - 클리핑: {len(clips)}개, Concepts: Tech {tech} / Personal {personal}, isolated: {isolated}")
+    print(
+        f"  - 클리핑: {len(clips)}개, Concepts: Tech {tech} / Personal {personal}, isolated: {isolated}"
+    )
 
     print("  - 깨진 링크 검사 중... (시간이 걸릴 수 있습니다)")
     broken = count_broken_links()
@@ -214,12 +224,14 @@ status: inProgress
 > 자동 생성 리포트입니다. 검토 후 권장 액션을 실행하세요.
 """
 
-    body = "\n\n".join([
-        section_clippings(clips),
-        section_ratio(tech, personal),
-        section_link_health(broken, isolated),
-        section_actions(clips, tech, personal, broken, isolated),
-    ])
+    body = "\n\n".join(
+        [
+            section_clippings(clips),
+            section_ratio(tech, personal),
+            section_link_health(broken, isolated),
+            section_actions(clips, tech, personal, broken, isolated),
+        ]
+    )
 
     content = frontmatter + "\n\n" + header + "\n" + body + "\n"
 

@@ -288,12 +288,28 @@ def check_structure(records: list, scope: str, stale_days: int) -> dict:
 # ──────────────────────────────────────────
 
 
-def check_links(records: list, scope: str) -> dict:
-    # 파일 인덱스는 항상 전체 볼트 기준
-    index = defaultdict(list)  # stem -> [FileRecord]
+def build_link_index(records: list) -> dict:
+    """stem -> [FileRecord] 링크 인덱스 (항상 전체 볼트 기준)"""
+    index = defaultdict(list)
     for rec in records:
         if rec.stem not in EXCLUDE_LINK_TARGETS:
             index[rec.stem].append(rec)
+    return index
+
+
+def count_broken_links(records: list) -> int:
+    """깨진 위키링크 수만 조용히 계산 (외부 스크립트용, 예: weekly-vault-review)"""
+    index = build_link_index(records)
+    return sum(
+        1
+        for rec in records
+        for _, target, _, _ in rec.links
+        if "../" not in target and target not in index
+    )
+
+
+def check_links(records: list, scope: str) -> dict:
+    index = build_link_index(records)
 
     broken, ambiguous, section_errors = [], [], []
     total_links = 0
