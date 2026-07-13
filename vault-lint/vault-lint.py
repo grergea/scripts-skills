@@ -243,6 +243,22 @@ def check_structure(records: list, scope: str, stale_days: int) -> dict:
             )
     crossref.sort(key=lambda x: x["link_count"])
 
+    # Concept 파일명 규칙 위반 (CLAUDE.md: 영문 PascalCase-하이픈만, 공백/한글/언더스코어 불가)
+    naming = sorted(
+        r.rel
+        for r in records
+        if r.rel.startswith(
+            ("03_Resources/Concepts_Tech/", "03_Resources/Concepts_Personal/")
+        )
+        and re.search(r"[ _가-힣]", r.stem)
+    )
+
+    # 동일 파일명(stem) 충돌 — 링크가 없어도 위키링크 모호성의 원인 (전역 검사)
+    stem_map = defaultdict(list)
+    for r in records:
+        stem_map[r.stem].append(r.rel)
+    collisions = {s: paths for s, paths in sorted(stem_map.items()) if len(paths) > 1}
+
     # ── 출력 ──
     print_section("1. 고아 노트 (Orphan Notes)", RED)
     print(f"  {YELLOW}아무 노트도 링크하지 않는 노트입니다.{RESET}")
@@ -284,10 +300,34 @@ def check_structure(records: list, scope: str, stale_days: int) -> dict:
     else:
         print(f"\n  {GREEN}✅ 모든 Concept 노트가 잘 연결되어 있습니다.{RESET}")
 
+    print_section("4. Concept 파일명 규칙 위반", YELLOW)
+    print(
+        f"  {YELLOW}공백/한글/언더스코어 포함 파일명입니다 (규칙: 영문 PascalCase-하이픈).{RESET}"
+    )
+    if naming:
+        print(f"\n  {YELLOW}발견: {len(naming)}개{RESET}")
+        for p in naming[:20]:
+            print(f"    📛 {p}")
+    else:
+        print(f"\n  {GREEN}✅ 파일명 규칙 위반 없음{RESET}")
+
+    print_section("5. 동일 파일명(stem) 충돌", YELLOW)
+    print(f"  {YELLOW}폴더가 달라도 파일명이 같으면 위키링크가 모호해집니다.{RESET}")
+    if collisions:
+        print(f"\n  {YELLOW}발견: {len(collisions)}건{RESET}")
+        for stem, paths in list(collisions.items())[:10]:
+            print(f"    🔀 {stem}")
+            for p in paths:
+                print(f"        📍 {p}")
+    else:
+        print(f"\n  {GREEN}✅ 파일명 충돌 없음{RESET}")
+
     return {
         "고아 노트": len(orphans),
         "스테일 노트": len(stale),
         "연결 부족 Concept": len(crossref),
+        "Concept 파일명 위반": len(naming),
+        "파일명 충돌": len(collisions),
     }
 
 
