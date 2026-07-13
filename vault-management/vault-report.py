@@ -4,7 +4,7 @@ vault-report.py
 볼트 현황 리포트 생성기. /lint 스킬의 Phase 1 입력 소스 (수동 실행).
 리포트는 월 단위(Concept_Review_YYYY-MM.md)로 관리 — 같은 달 재실행 시
 최신 현황 섹션은 갱신하고 '점검 이력' 테이블에 실행 결과를 누적한다.
-- Inbox 미처리 노트 알림 (30일 초과)
+- 미처리 클리핑 알림 (00_Inbox/Clippings*, 30일 초과)
 - Personal/Tech 비율 체크
 - Raw Sources(00~03)의 Concept 반영률 집계 (미연결 소스 노트 탐지)
 - #isolated Concept 노트 카운트
@@ -30,6 +30,9 @@ WIKI_PREFIXES = (  # 위키 레이어 — Raw Source 집계에서 제외
     "03_Resources/Index/",
 )
 NON_SOURCE_TYPES = {"meeting", "people"}  # Atomic 개념 추출 대상이 아닌 노트 타입
+INBOX_CLIPPING_PREFIX = (
+    "00_Inbox/Clippings"  # 00_Inbox는 Clippings* 경로만 집계 (Scratchpad 등 제외)
+)
 VAULT_LINT_PATH = VAULT / "scripts-skills/vault-lint/vault-lint.py"
 
 today = date.today()
@@ -82,10 +85,10 @@ def load_records() -> tuple[list, int]:
 
 
 def collect_clippings(records: list) -> list[dict]:
-    """00_Inbox 전체에서 30일 초과 미처리 노트 수집"""
+    """00_Inbox/Clippings* 에서 30일 초과 미처리 클리핑 수집"""
     clips = []
     for rec in records:
-        if not rec.rel.startswith("00_Inbox/"):
+        if not rec.rel.startswith(INBOX_CLIPPING_PREFIX):
             continue
         created = fm_date(rec.fm, "created")
         if created and created <= month_ago:
@@ -137,6 +140,8 @@ def concept_coverage(records: list) -> tuple[dict, list[dict]]:
             continue
         if rec.rel.startswith(WIKI_PREFIXES):
             continue
+        if area == "00_Inbox" and not rec.rel.startswith(INBOX_CLIPPING_PREFIX):
+            continue
         if (rec.fm or {}).get("type") in NON_SOURCE_TYPES:
             continue
         stats[area]["total"] += 1
@@ -155,7 +160,7 @@ def concept_coverage(records: list) -> tuple[dict, list[dict]]:
 
 
 def section_clippings(clips: list[dict]) -> str:
-    lines = [f"## 미처리 Inbox 노트 ({len(clips)}개, 30일 초과)\n"]
+    lines = [f"## 미처리 클리핑 ({len(clips)}개, 30일 초과)\n"]
     if clips:
         lines.append("| 파일명 | 수집일 | 경과일 | 폴더 |")
         lines.append("|--------|--------|--------|------|")
@@ -164,7 +169,7 @@ def section_clippings(clips: list[dict]) -> str:
                 f"| {c['name']} | {c['created']} | {c['days_old']}일 | {c['folder']} |"
             )
     else:
-        lines.append("미처리 노트 없음 ✅")
+        lines.append("미처리 클리핑 없음 ✅")
     return "\n".join(lines)
 
 
@@ -185,7 +190,7 @@ def section_ratio(tech: int, personal: int) -> str:
 def section_coverage(stats: dict) -> str:
     lines = [
         "## Concept 반영률 (Raw Sources 00~03)\n",
-        "> Concept 노트로의 위키링크가 하나도 없는 원본 소스 노트를 '미연결'로 집계 (meeting/people 타입 제외)\n",
+        "> Concept 노트로의 위키링크가 하나도 없는 원본 소스 노트를 '미연결'로 집계 (meeting/people 타입 제외, 00_Inbox는 Clippings*만)\n",
         "| 영역 | 소스 노트 | Concept 연결 | 미연결 | 반영률 |",
         "|------|----------|-------------|--------|--------|",
     ]
@@ -280,7 +285,7 @@ def section_history(
 ) -> str:
     lines = [
         "## 점검 이력\n",
-        "| 점검일 | 깨진 링크 | Inbox 미처리 | #isolated | Tech/Personal | Concept 미연결 |",
+        "| 점검일 | 깨진 링크 | 미처리 클리핑 | #isolated | Tech/Personal | Concept 미연결 |",
         "|--------|----------|-------------|-----------|---------------|----------------|",
     ]
     lines.extend(prev_rows)
@@ -319,7 +324,7 @@ def main():
     isolated = count_isolated(records)
     stats, unlinked = concept_coverage(records)
     print(
-        f"  - Inbox 미처리: {len(clips)}개, Concepts: Tech {tech} / Personal {personal}, isolated: {isolated}"
+        f"  - 클리핑: {len(clips)}개, Concepts: Tech {tech} / Personal {personal}, isolated: {isolated}"
     )
     print(f"  - 깨진 링크: {broken}개, Concept 미연결 소스: {len(unlinked)}개")
 
