@@ -7,10 +7,7 @@ Obsidian vault management and automation scripts integrated with Claude Code ski
 ### Vault Quality Assurance
 
 - **clean-note** - Remove AI artifacts and formatting issues from notes (v1.3.0: code block protection)
-- **obsidian-link-checker** - Validate wikilink integrity and detect broken links
-- **obsidian-metadata-validator** - Validate YAML frontmatter metadata
-- **obsidian-tag-normalizer** - Normalize tags and detect similar tags
-- **vault-lint** - Detect orphan notes, stale notes, and missing cross-references
+- **vault-lint** - Unified vault health checker: structure (orphan/stale/cross-ref), wikilink integrity, YAML frontmatter metadata, and tag normalization (merged from obsidian-link-checker, obsidian-metadata-validator, obsidian-tag-normalizer)
 - **vault-management** - Weekly vault report generation (clipping alerts, link health, concept stats)
 
 ### Knowledge Network
