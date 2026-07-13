@@ -60,7 +60,13 @@ STRUCTURE_EXCLUDE_PREFIXES = {
     "02_Areas/개인_성장",
     "02_Areas/개인_홈",
 }
-STRUCTURE_EXCLUDE_FILES = {"hot.md", "Dashboard.md", "GEMINI.md", "CLAUDE.md"}
+NON_NOTE_FILES = {
+    "hot.md",
+    "Dashboard.md",
+    "GEMINI.md",
+    "CLAUDE.md",
+    "HERMES.md",
+}
 
 DEFAULT_STALE_DAYS = 180
 DEFAULT_MIN_SIMILARITY = 70
@@ -178,7 +184,7 @@ def print_section(title: str, color: str = CYAN):
 
 
 def structure_excluded(rec: FileRecord) -> bool:
-    if rec.path.name in STRUCTURE_EXCLUDE_FILES:
+    if rec.path.name in NON_NOTE_FILES:
         return True
     return any(rec.rel.startswith(p) for p in STRUCTURE_EXCLUDE_PREFIXES)
 
@@ -403,7 +409,11 @@ def _has_section(content: str, section: str) -> bool:
 
 
 def check_meta(records: list, scope: str) -> dict:
-    targets = [r for r in records if in_scope(r, scope)]
+    targets = [
+        r
+        for r in records
+        if in_scope(r, scope) and r.path.name not in NON_NOTE_FILES
+    ]
     issues = []  # (rel, issue_type, field, message)
     no_frontmatter = []
     valid_count = 0
