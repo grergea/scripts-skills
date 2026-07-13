@@ -7,7 +7,7 @@ Obsidian vault management and automation scripts integrated with Claude Code ski
 ### Vault Quality Assurance
 
 - **vault-lint** - Unified vault health checker: structure (orphan/stale/cross-ref), wikilink integrity, YAML frontmatter metadata, and tag normalization (merged from obsidian-link-checker, obsidian-metadata-validator, obsidian-tag-normalizer)
-- **vault-management** - Weekly vault report generation (clipping alerts, link health, concept stats)
+- **vault-management** - Vault status report generation for /lint (clipping alerts, link health, concept stats) — run manually via vault-report.py
 
 ### Knowledge Network
 

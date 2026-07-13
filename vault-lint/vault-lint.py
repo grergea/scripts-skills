@@ -298,7 +298,7 @@ def build_link_index(records: list) -> dict:
 
 
 def count_broken_links(records: list) -> int:
-    """깨진 위키링크 수만 조용히 계산 (외부 스크립트용, 예: weekly-vault-review)"""
+    """깨진 위키링크 수만 조용히 계산 (외부 스크립트용, 예: vault-report)"""
     index = build_link_index(records)
     return sum(
         1

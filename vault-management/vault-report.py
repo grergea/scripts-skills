@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-weekly-vault-review.py
-볼트 주간 리포트 생성기.
+vault-report.py
+볼트 현황 리포트 생성기. /lint 스킬의 Phase 1 입력 소스 (수동 실행).
 - 클리핑 소화 알림
 - Personal/Tech 비율 체크
 - #isolated Concept 노트 카운트
