@@ -32,6 +32,7 @@ EXCLUDE_SCAN_DIRS = {
     ".obsidian",
     ".trash",
     ".claude",
+    "copilot",  # Obsidian Copilot 플러그인 데이터 (커스텀 프롬프트, 대화 기록, 메모리) — 노트 아님
     "node_modules",
     "scripts-repo",
     "scripts-skills",
