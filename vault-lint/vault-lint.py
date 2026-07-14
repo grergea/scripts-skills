@@ -570,6 +570,19 @@ def check_meta(records: list, scope: str) -> dict:
                     )
                 )
 
+        tags = fm.get("tags")
+        if isinstance(tags, list):
+            dup_tags = sorted({str(t) for t in tags if tags.count(t) > 1})
+            if dup_tags:
+                issues.append(
+                    (
+                        rec.rel,
+                        "invalid",
+                        "tags",
+                        f"중복 태그가 있습니다: {', '.join(dup_tags)}",
+                    )
+                )
+
         if len(issues) == before:
             valid_count += 1
 
