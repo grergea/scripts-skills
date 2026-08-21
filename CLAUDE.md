@@ -21,6 +21,4 @@
 
 ### 커밋 메시지 형식
 
-```
-Add/Update/Fix 스크립트명 - 간단한 설명
-```
+Conventional Commits (`<type>(<scope>): <subject>`). Types: feat, fix, refactor, perf, docs, test, chore, build, ci, style, revert. 명령형, subject ≤50자 권장(최대 72자), 마침표 없음. body는 "왜"가 자명하지 않을 때만 추가. 커밋 메시지는 `caveman-commit` 스킬로 생성한다.
