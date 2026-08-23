@@ -6,6 +6,7 @@ Obsidian Concept 노트의 네트워크 구조를 분석하고 통계를 생성�
 
 import os
 import re
+import sys
 import json
 import yaml
 from pathlib import Path
@@ -37,7 +38,7 @@ class ConceptAnalyzer:
         self.vault_file_stems = set()
         for md_file in self.vault_root.rglob('*.md'):
             self.vault_file_stems.add(md_file.stem)
-        print(f"Built vault file index: {len(self.vault_file_stems)} files")
+        print(f"Built vault file index: {len(self.vault_file_stems)} files", file=sys.stderr)
 
     def extract_frontmatter(self, content):
         """YAML frontmatter 추출"""
@@ -85,7 +86,7 @@ class ConceptAnalyzer:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
-            print(f"Error reading {filepath}: {e}")
+            print(f"Error reading {filepath}: {e}", file=sys.stderr)
             return None
 
         frontmatter, body = self.extract_frontmatter(content)
@@ -145,7 +146,7 @@ class ConceptAnalyzer:
 
         md_files = list(self.concepts_path.glob('*.md'))
 
-        print(f"Found {len(md_files)} markdown files in {self.concepts_path}")
+        print(f"Found {len(md_files)} markdown files in {self.concepts_path}", file=sys.stderr)
 
         # 1차: 파일별 분석
         for filepath in md_files:
@@ -159,7 +160,7 @@ class ConceptAnalyzer:
             concept['inlinks_count'] = len(concept['inlinks'])
             concept['total_links'] = concept['inlinks_count'] + concept['outlinks_count']
 
-        print(f"Analyzed {len(self.concepts)} concept notes")
+        print(f"Analyzed {len(self.concepts)} concept notes", file=sys.stderr)
 
     def generate_statistics(self, additional_known_stems=None):
         """통계 생성"""
@@ -509,7 +510,7 @@ class ConceptMiner:
             re.sub(r'[\s\-_]', '', s).lower(): s
             for s in self.concept_stems
         }
-        print(f"Index: 볼트 {len(self.vault_file_stems)}개 파일, Concept {len(self.concept_stems)}개")
+        print(f"Index: 볼트 {len(self.vault_file_stems)}개 파일, Concept {len(self.concept_stems)}개", file=sys.stderr)
 
     def get_target_files(self):
         """스캔 대상 파일 선정 (days=0이면 전체)"""
@@ -587,7 +588,7 @@ class ConceptMiner:
         """마이닝 실행 — 후보 딕셔너리 반환"""
         self.build_indexes(concepts_tech_path, concepts_personal_path)
         target_files = self.get_target_files()
-        print(f"스캔 대상: {len(target_files)}개 파일 (days={self.days})")
+        print(f"스캔 대상: {len(target_files)}개 파일 (days={self.days})", file=sys.stderr)
 
         wikilink_candidates = defaultdict(lambda: {'sources': [], 'category': 'Tech', 'method': 'wikilink'})
         keyword_counter = Counter()
@@ -800,7 +801,7 @@ def main():
         if args.output:
             with open(args.output, 'w', encoding='utf-8') as f:
                 f.write(output)
-            print(f"Report saved to {args.output}")
+            print(f"Report saved to {args.output}", file=sys.stderr)
         else:
             print(output)
 
