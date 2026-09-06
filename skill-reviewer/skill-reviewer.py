@@ -11,6 +11,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 from glob import glob
 from pathlib import Path
 from datetime import datetime
@@ -138,6 +140,55 @@ def scan_transcripts():
     return skill_usage, agent_usage, window
 
 
+def run_validate():
+    """구조 검증은 `claude plugin validate` 에 위임한다.
+
+    frontmatter 누락, 매니페스트 오류, 인식 못 하는 필드까지 잡아 주므로
+    자체 정규식으로 흉내 내지 않는다. validate 는 심볼릭 링크를 따라가지
+    않으므로 링크된 스킬의 실제 경로를 따로 한 번 더 검사한다.
+    """
+    exe = shutil.which("claude")
+    if not exe:
+        return {"available": False, "reason": "claude 실행 파일을 찾을 수 없음"}
+
+    targets = [str(VAULT / ".claude")]
+    for entry in sorted(SKILLS_DIR.iterdir()):
+        if entry.is_symlink():
+            targets.append(str(entry.resolve().parent))
+    targets = list(dict.fromkeys(targets))
+
+    runs = []
+    for target in targets:
+        try:
+            proc = subprocess.run(
+                [exe, "plugin", "validate", target, "--strict"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            runs.append({"target": target, "error": str(exc)})
+            continue
+        output = (proc.stdout or "") + (proc.stderr or "")
+        runs.append(
+            {
+                "target": target,
+                "passed": proc.returncode == 0,
+                "findings": [
+                    line.strip().lstrip("❯ ").strip()
+                    for line in output.splitlines()
+                    if line.strip().startswith("❯")
+                ],
+            }
+        )
+
+    return {
+        "available": True,
+        "command": "claude plugin validate <target> --strict",
+        "runs": runs,
+    }
+
+
 def load_history():
     try:
         data = json.loads(HISTORY.read_text(encoding="utf-8"))
@@ -223,6 +274,7 @@ def main(record=True):
     result = {
         "generated_at": datetime.now().isoformat(),
         "usage_window": window,
+        "structural_validation": run_validate(),
         "history": {
             "path": str(HISTORY),
             "recorded": record,
@@ -232,12 +284,10 @@ def main(record=True):
         "agents": agents,
         "external_skill_usage": external,
         "issues": {
-            "no_description": [s["name"] for s in skills if not s["has_description"]],
             "no_trigger_guidance": [
                 s["name"] for s in skills if not s["has_trigger_guidance"]
             ],
             "never_invoked": [s["name"] for s in skills if s["invocation_count"] == 0],
-            "agents_no_desc": [a["name"] for a in agents if not a["has_description"]],
             "oversized": [
                 f"{s['name']} ({s['line_count']}줄)"
                 for s in skills
