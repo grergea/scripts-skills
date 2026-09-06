@@ -18,7 +18,8 @@ from datetime import datetime
 VAULT = Path("/Users/shlee/mynotes")
 SKILLS_DIR = VAULT / ".claude/skills"
 AGENTS_DIR = VAULT / ".claude/agents"
-TRANSCRIPTS = os.path.expanduser("~/.claude/projects/*/*.jsonl")
+# 서브에이전트 트랜스크립트는 <세션>/subagents/ 아래에 따로 쌓이므로 재귀로 훑는다
+TRANSCRIPTS = os.path.expanduser("~/.claude/projects/**/*.jsonl")
 HISTORY = VAULT / ".claude/cache/skill-usage-history.json"
 
 OVERSIZE_LINES = 300
@@ -87,7 +88,7 @@ def scan_transcripts():
     """
     skill_usage, agent_usage = {}, {}
     earliest = latest = None
-    files = glob(TRANSCRIPTS)
+    files = glob(TRANSCRIPTS, recursive=True)
 
     def record(bucket, name, day):
         e = bucket.setdefault(name, {"count": 0, "last_used": None})
@@ -129,7 +130,7 @@ def scan_transcripts():
             continue
 
     window = {
-        "source": "~/.claude/projects/*/*.jsonl",
+        "source": "~/.claude/projects/**/*.jsonl",
         "session_files": len(files),
         "earliest": earliest,
         "latest": latest,
