@@ -14,9 +14,9 @@ Obsidian vault management and automation scripts integrated with Claude Code ski
 - **concept-analyzer** - Analyze concept note network structure
 - **attachment-cleaner** - Clean up unused attachments and duplicates
 
-### Agent Support
+### Skill Support
 
-- **skill-reviewer** - Collect skill/agent metadata for periodic quality review (outputs JSON for Claude agent)
+- **skill-reviewer** - Collect skill/agent metadata and real invocation counts from Claude Code transcripts for periodic quality review (used by the `vault-skill-review` skill)
 
 ## Usage
 

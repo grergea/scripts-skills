@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
 skill-reviewer.py - Collect skill/agent data for review
-Outputs JSON for Claude agent to analyze with karpathy-guidelines lens
+
+볼트가 소유한 스킬(.claude/skills)과 에이전트(.claude/agents)의 메타데이터를 수집하고,
+Claude Code 트랜스크립트에서 실제 호출 횟수를 집계해 JSON으로 출력한다.
+분석과 판단은 vault-skill-review 스킬이 수행한다.
 """
+
 import json
+import os
 import re
-import sys
+from glob import glob
 from pathlib import Path
 from datetime import datetime
 
-VAULT = Path("/Users/shlee/leesh/mynotes")
+VAULT = Path("/Users/shlee/mynotes")
 SKILLS_DIR = VAULT / ".claude/skills"
 AGENTS_DIR = VAULT / ".claude/agents"
-PROMPT_LOG = VAULT / "06_Metadata/Reference/Prompt Log.md"
+TRANSCRIPTS = os.path.expanduser("~/.claude/projects/*/*.jsonl")
+
+OVERSIZE_LINES = 300
 
 
 def read_skill(skill_dir):
@@ -21,30 +28,42 @@ def read_skill(skill_dir):
         return None
     content = skill_file.read_text(encoding="utf-8")
 
-    desc_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+    desc_match = re.search(r"^description:\s*(.+)$", content, re.MULTILINE)
     desc = desc_match.group(1).strip().strip('"') if desc_match else ""
 
-    sections = re.findall(r'^## .+$', content, re.MULTILINE)
-    has_when_to_use = bool(re.search(r'when to use|언제 사용|사용 시', content, re.IGNORECASE))
-    has_success_criteria = bool(re.search(r'성공 기준|success criteria|검증|verify', content, re.IGNORECASE))
-    trigger_keywords = re.findall(r'[가-힣]{2,}|[a-zA-Z]{4,}', desc)
+    sections = re.findall(r"^## .+$", content, re.MULTILINE)
+
+    # 트리거 안내는 description 의 "Use when / Triggers on" 이나 본문 When to Use 섹션
+    # 둘 중 하나만 있으면 충족된다. 최신 스킬은 description 에만 두는 편이라
+    # 섹션 유무만 보면 정상 스킬이 대량 오탐된다.
+    has_when_to_use_section = bool(
+        re.search(
+            r"^#{2,3} .*(when to use|언제 사용)", content, re.IGNORECASE | re.MULTILINE
+        )
+    )
+    desc_has_trigger = bool(
+        re.search(
+            r"use when|triggers on|use this skill when|할 때|사용", desc, re.IGNORECASE
+        )
+    )
 
     return {
         "name": skill_dir.name,
         "description": desc,
         "has_description": bool(desc.strip()),
+        "desc_length": len(desc),
         "sections": sections,
-        "has_when_to_use": has_when_to_use,
-        "has_success_criteria": has_success_criteria,
-        "trigger_keyword_count": len(trigger_keywords),
+        "has_when_to_use_section": has_when_to_use_section,
+        "desc_has_trigger": desc_has_trigger,
+        "has_trigger_guidance": has_when_to_use_section or desc_has_trigger,
         "char_count": len(content),
-        "content": content,
+        "line_count": content.count("\n") + 1,
     }
 
 
 def read_agent(agent_file):
     content = agent_file.read_text(encoding="utf-8")
-    desc_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+    desc_match = re.search(r"^description:\s*(.+)$", content, re.MULTILINE)
     desc = desc_match.group(1).strip().strip('"') if desc_match else ""
 
     return {
@@ -52,38 +71,67 @@ def read_agent(agent_file):
         "description": desc,
         "has_description": bool(desc.strip()),
         "char_count": len(content),
-        "content": content,
+        "line_count": content.count("\n") + 1,
     }
 
 
-def read_log_content():
-    """현재 로그 + 이번 주 보관본을 합쳐서 반환 (로테이션 직후 대비)"""
-    content = PROMPT_LOG.read_text(encoding="utf-8") if PROMPT_LOG.exists() else ""
+def scan_transcripts():
+    """Claude Code 트랜스크립트에서 Skill/Agent 실제 호출을 집계한다.
 
-    now = datetime.now()
-    this_year, this_week = now.isocalendar()[:2]
-    pattern = re.compile(r"^Prompt Log - (\d{4}-\d{2}-\d{2})\.md$")
+    반환: (skill_usage, agent_usage, window)
+    usage 는 {이름: {"count": N, "last_used": "YYYY-MM-DD"}}.
+    트랜스크립트는 일정 기간 후 삭제되므로 window 로 관측 구간을 함께 보고한다.
+    """
+    skill_usage, agent_usage = {}, {}
+    earliest = latest = None
+    files = glob(TRANSCRIPTS)
 
-    for f in sorted(PROMPT_LOG.parent.iterdir()):
-        m = pattern.match(f.name)
-        if not m:
+    def record(bucket, name, day):
+        e = bucket.setdefault(name, {"count": 0, "last_used": None})
+        e["count"] += 1
+        if day and (e["last_used"] is None or day > e["last_used"]):
+            e["last_used"] = day
+
+    for path in files:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for line in fh:
+                    if '"tool_use"' not in line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    day = (entry.get("timestamp") or "")[:10]
+                    if day.startswith("20"):
+                        if earliest is None or day < earliest:
+                            earliest = day
+                        if latest is None or day > latest:
+                            latest = day
+                    message = entry.get("message") or {}
+                    for block in message.get("content") or []:
+                        if (
+                            not isinstance(block, dict)
+                            or block.get("type") != "tool_use"
+                        ):
+                            continue
+                        params = block.get("input") or {}
+                        if block.get("name") == "Skill":
+                            if params.get("skill"):
+                                record(skill_usage, params["skill"], day)
+                        elif block.get("name") == "Agent":
+                            if params.get("subagent_type"):
+                                record(agent_usage, params["subagent_type"], day)
+        except OSError:
             continue
-        archive_date = datetime.strptime(m.group(1), "%Y-%m-%d")
-        if archive_date.isocalendar()[:2] == (this_year, this_week):
-            content += f.read_text(encoding="utf-8")
-            break
 
-    return content
-
-
-def extract_prompts(log_content):
-    rows = re.findall(r'\|\s*[\d-]+ [\d:]+\s*\|\s*`([^`]+)`\s*\|', log_content)
-    return rows
-
-
-def count_mentions(name, log_content):
-    safe = re.escape(name)
-    return len(re.findall(safe, log_content, re.IGNORECASE))
+    window = {
+        "source": "~/.claude/projects/*/*.jsonl",
+        "session_files": len(files),
+        "earliest": earliest,
+        "latest": latest,
+    }
+    return skill_usage, agent_usage, window
 
 
 def main():
@@ -98,24 +146,38 @@ def main():
     for f in sorted(AGENTS_DIR.glob("*.md")):
         agents.append(read_agent(f))
 
-    log_content = read_log_content()
-    prompts = extract_prompts(log_content)
+    skill_usage, agent_usage, window = scan_transcripts()
 
-    for s in skills:
-        s["mention_count"] = count_mentions(s["name"], log_content)
-    for a in agents:
-        a["mention_count"] = count_mentions(a["name"], log_content)
+    for item, usage in ((skills, skill_usage), (agents, agent_usage)):
+        for entry in item:
+            hit = usage.get(entry["name"], {})
+            entry["invocation_count"] = hit.get("count", 0)
+            entry["last_used"] = hit.get("last_used")
+
+    known = {s["name"] for s in skills} | {a["name"] for a in agents}
+    external = sorted(
+        ({**v, "name": k} for k, v in skill_usage.items() if k not in known),
+        key=lambda e: -e["count"],
+    )
 
     result = {
         "generated_at": datetime.now().isoformat(),
+        "usage_window": window,
         "skills": skills,
         "agents": agents,
-        "recent_prompts": prompts[-80:],
+        "external_skill_usage": external,
         "issues": {
             "no_description": [s["name"] for s in skills if not s["has_description"]],
-            "no_when_to_use": [s["name"] for s in skills if not s["has_when_to_use"]],
-            "never_mentioned": [s["name"] for s in skills if s["mention_count"] == 0],
+            "no_trigger_guidance": [
+                s["name"] for s in skills if not s["has_trigger_guidance"]
+            ],
+            "never_invoked": [s["name"] for s in skills if s["invocation_count"] == 0],
             "agents_no_desc": [a["name"] for a in agents if not a["has_description"]],
+            "oversized": [
+                f"{s['name']} ({s['line_count']}줄)"
+                for s in skills
+                if s["line_count"] > OVERSIZE_LINES
+            ],
         },
     }
 
