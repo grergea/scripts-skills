@@ -7,6 +7,7 @@ Claude Code 트랜스크립트에서 실제 호출 횟수를 집계해 JSON으�
 분석과 판단은 vault-skill-review 스킬이 수행한다.
 """
 
+import argparse
 import json
 import os
 import re
@@ -18,8 +19,10 @@ VAULT = Path("/Users/shlee/mynotes")
 SKILLS_DIR = VAULT / ".claude/skills"
 AGENTS_DIR = VAULT / ".claude/agents"
 TRANSCRIPTS = os.path.expanduser("~/.claude/projects/*/*.jsonl")
+HISTORY = VAULT / ".claude/cache/skill-usage-history.json"
 
 OVERSIZE_LINES = 300
+DELETE_STREAK = 3
 
 
 def read_skill(skill_dir):
@@ -134,7 +137,55 @@ def scan_transcripts():
     return skill_usage, agent_usage, window
 
 
-def main():
+def load_history():
+    try:
+        data = json.loads(HISTORY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def record_history(history, skills, agents, window):
+    """이번 실행 결과를 월 단위 스냅샷으로 남긴다.
+
+    트랜스크립트는 몇 주 뒤 삭제되므로 그때그때의 집계를 보존해야
+    장기 미사용 여부를 판단할 수 있다. 같은 달에 여러 번 실행하면
+    해당 달 항목을 덮어써서 주기 수가 부풀지 않게 한다.
+    """
+    month = datetime.now().strftime("%Y-%m")
+    history[month] = {
+        "recorded_at": datetime.now().strftime("%Y-%m-%d"),
+        "window": [window["earliest"], window["latest"]],
+        "skills": {s["name"]: s["invocation_count"] for s in skills},
+        "agents": {a["name"]: a["invocation_count"] for a in agents},
+    }
+
+    HISTORY.parent.mkdir(parents=True, exist_ok=True)
+    tmp = HISTORY.with_name(HISTORY.name + ".tmp")
+    tmp.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    tmp.replace(HISTORY)
+    return history
+
+
+def zero_streak(history, kind, name):
+    """최근 달부터 거슬러 올라가며 호출 0회가 연속된 주기 수.
+
+    해당 스냅샷에 이름이 없으면 그 시점에 존재하지 않던 스킬이므로
+    거기서 멈춘다. 신설 스킬이 과거 미기록을 미사용으로 오인하지 않도록.
+    """
+    streak = 0
+    for month in sorted(history, reverse=True):
+        counts = history[month].get(kind) or {}
+        if counts.get(name) != 0:
+            break
+        streak += 1
+    return streak
+
+
+def main(record=True):
     skills = []
     for d in sorted(SKILLS_DIR.iterdir()):
         if d.is_dir():
@@ -160,9 +211,22 @@ def main():
         key=lambda e: -e["count"],
     )
 
+    history = load_history()
+    if record:
+        history = record_history(history, skills, agents, window)
+
+    for kind, item in (("skills", skills), ("agents", agents)):
+        for entry in item:
+            entry["zero_streak"] = zero_streak(history, kind, entry["name"])
+
     result = {
         "generated_at": datetime.now().isoformat(),
         "usage_window": window,
+        "history": {
+            "path": str(HISTORY),
+            "recorded": record,
+            "months": sorted(history),
+        },
         "skills": skills,
         "agents": agents,
         "external_skill_usage": external,
@@ -178,6 +242,11 @@ def main():
                 for s in skills
                 if s["line_count"] > OVERSIZE_LINES
             ],
+            "delete_candidates": [
+                f"{s['name']} ({s['zero_streak']}주기 연속 미호출)"
+                for s in skills
+                if s["zero_streak"] >= DELETE_STREAK
+            ],
         },
     }
 
@@ -185,4 +254,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="이번 실행 결과를 사용 이력에 기록하지 않는다 (dry-run 용)",
+    )
+    args = parser.parse_args()
+    main(record=not args.no_record)
