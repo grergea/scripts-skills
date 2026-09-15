@@ -62,11 +62,9 @@ STRUCTURE_EXCLUDE_PREFIXES = {
     "00_Inbox",  # 받은 편지함
     "06_Metadata",  # 메타데이터/템플릿
     "03_Resources/Index",  # 색인 폴더 (링크 안 받는 게 정상)
-    # ── 개인 참고 기록 (지식 그래프 노드 아님) ──
-    "02_Areas/개인_금융",
-    "02_Areas/개인_여행",
-    "02_Areas/개인_성장",
-    "02_Areas/개인_홈",
+    # 개인 참고 기록 (지식 그래프 노드 아님) — 개별 나열하면 폴더가 늘 때
+    # 누락된다. 실제로 '개인_보험'이 빠져 오탐 4건이 있었다
+    "02_Areas/개인_",
 }
 NON_NOTE_FILES = {
     "hot.md",
@@ -207,13 +205,43 @@ def print_section(title: str, color: str = CYAN):
 # ──────────────────────────────────────────
 
 
+INDEX_DIR = "03_Resources/Index"
+DATAVIEW_FROM_PATTERN = re.compile(r'FROM\s+"([^"]+)"')
+
+
+def dataview_indexed_prefixes(vault: Path) -> set:
+    """Index 노트의 Dataview 쿼리가 수집하는 폴더 목록.
+
+    이 볼트의 Index는 위키링크가 아니라 Dataview로 노트를 모은다
+    (CLAUDE.md Index 페이지 규칙). 그래서 Index에 실리는 노트도 들어오는
+    위키링크가 없어 고아로 잡히지만, 실제로는 Index를 통해 도달 가능하다.
+    """
+    prefixes = set()
+    index_path = vault / INDEX_DIR
+    if not index_path.is_dir():
+        return prefixes
+    for md_file in sorted(index_path.glob("*.md")):
+        try:
+            content = md_file.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for block in re.findall(r"```dataview(.*?)```", content, re.DOTALL):
+            for folder in DATAVIEW_FROM_PATTERN.findall(block):
+                folder = folder.strip().strip("/")
+                if folder:
+                    prefixes.add(folder + "/")
+    return prefixes
+
+
 def structure_excluded(rec: FileRecord) -> bool:
     if rec.path.name in NON_NOTE_FILES:
         return True
     return any(rec.rel.startswith(p) for p in STRUCTURE_EXCLUDE_PREFIXES)
 
 
-def check_structure(records: list, scope: str, stale_days: int) -> dict:
+def check_structure(
+    records: list, scope: str, stale_days: int, vault: Path = None
+) -> dict:
     targets = [r for r in records if not structure_excluded(r) and in_scope(r, scope)]
 
     # 고아 노트: 전체 볼트의 링크 대상 수집 (scope와 무관하게 전역)
@@ -222,7 +250,14 @@ def check_structure(records: list, scope: str, stale_days: int) -> dict:
         for _, target, _, _ in rec.links:
             all_linked_stems.add(Path(target).stem if "/" in target else target)
 
-    orphans = sorted(r.rel for r in targets if r.stem not in all_linked_stems)
+    # Dataview Index가 수집하는 폴더의 노트는 위키링크가 없어도 도달 가능하다
+    indexed = dataview_indexed_prefixes(vault) if vault else set()
+    orphans = sorted(
+        r.rel
+        for r in targets
+        if r.stem not in all_linked_stems
+        and not any(r.rel.startswith(p) for p in indexed)
+    )
 
     # 스테일 노트: 중요 타입만
     check_types = {"concept", "troubleshooting", "documentation", "customer"}
@@ -858,7 +893,7 @@ def main():
 
     summary = {}
     if "structure" in checks:
-        summary.update(check_structure(records, scope, args.stale_days))
+        summary.update(check_structure(records, scope, args.stale_days, vault))
     if "links" in checks:
         summary.update(check_links(records, scope))
     if "meta" in checks:

@@ -63,6 +63,33 @@ class StructureChecks(VaultLintTestCase):
 
         self.assertEqual(summary["고아 노트"], 1)
 
+    def test_dataview_indexed_note_is_not_orphan(self):
+        # Index는 위키링크가 아니라 Dataview로 노트를 모은다.
+        # 들어오는 링크가 없어도 Index를 통해 도달 가능하므로 고아가 아니다.
+        write_note(
+            self.vault,
+            "03_Resources/Index/🏷 Scripts.md",
+            DEFAULT_FM.replace("type: note", "type: index"),
+            '```dataview\nTABLE file.link\nFROM "03_Resources/Scripts"\n'
+            'WHERE type = "script"\n```',
+        )
+        write_note(self.vault, "03_Resources/Scripts/CDN/tool.md", DEFAULT_FM)
+        write_note(self.vault, "02_Areas/Unindexed.md", DEFAULT_FM)
+
+        summary = run_quietly(
+            vault_lint.check_structure, self.scan(), None, 180, self.vault
+        )
+
+        self.assertEqual(summary["고아 노트"], 1)
+
+    def test_personal_folders_excluded_by_prefix(self):
+        for name in ("개인_보험", "개인_금융", "개인_신규영역"):
+            write_note(self.vault, f"02_Areas/{name}/기록.md", DEFAULT_FM)
+
+        summary = run_quietly(vault_lint.check_structure, self.scan(), None, 180)
+
+        self.assertEqual(summary["고아 노트"], 0)
+
     def test_concept_naming_violation(self):
         write_note(self.vault, "03_Resources/Concepts_Tech/Valid-Name.md", DEFAULT_FM)
         write_note(self.vault, "03_Resources/Concepts_Tech/잘못된 이름.md", DEFAULT_FM)
