@@ -142,6 +142,46 @@ class LinkChecks(VaultLintTestCase):
 
         self.assertEqual(summary["모호한 링크"], 1)
 
+    def test_relative_link_detected_with_suggestion(self):
+        write_note(self.vault, "03_Resources/Concepts_Tech/DNSSEC.md", DEFAULT_FM)
+        write_note(
+            self.vault,
+            "02_Areas/업무_CDN/A.md",
+            DEFAULT_FM,
+            "[[../../03_Resources/Concepts_Tech/DNSSEC]] 참조",
+        )
+
+        summary = run_quietly(vault_lint.check_links, self.scan(), None)
+
+        self.assertEqual(summary["상대경로 링크"], 1)
+        # 상대경로는 유효/깨짐 집계에 섞이지 않는다
+        self.assertEqual(summary["깨진 링크"], 0)
+
+    def test_normalized_link_not_flagged_relative(self):
+        write_note(self.vault, "03_Resources/Concepts_Tech/DNSSEC.md", DEFAULT_FM)
+        write_note(self.vault, "02_Areas/업무_CDN/A.md", DEFAULT_FM, "[[DNSSEC]] 참조")
+
+        summary = run_quietly(vault_lint.check_links, self.scan(), None)
+
+        self.assertEqual(summary["상대경로 링크"], 0)
+        self.assertEqual(summary["깨진 링크"], 0)
+
+    def test_attachment_embed_is_not_broken(self):
+        (self.vault / "05_Attachments").mkdir(parents=True, exist_ok=True)
+        (self.vault / "05_Attachments" / "diagram.png").write_bytes(b"\x89PNG")
+        write_note(self.vault, "02_Areas/A.md", DEFAULT_FM, "![[diagram.png]]")
+
+        summary = run_quietly(vault_lint.check_links, self.scan(), None, self.vault)
+
+        self.assertEqual(summary["깨진 링크"], 0)
+
+    def test_missing_attachment_still_broken(self):
+        write_note(self.vault, "02_Areas/A.md", DEFAULT_FM, "![[없는이미지.png]]")
+
+        summary = run_quietly(vault_lint.check_links, self.scan(), None, self.vault)
+
+        self.assertEqual(summary["깨진 링크"], 1)
+
     def test_section_error_detected(self):
         write_note(self.vault, "02_Areas/A.md", DEFAULT_FM, "[[B#없는섹션]]")
         write_note(self.vault, "02_Areas/B.md", DEFAULT_FM, "## 실제 섹션\n내용")

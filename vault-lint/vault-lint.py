@@ -403,6 +403,23 @@ def check_structure(
 # ──────────────────────────────────────────
 
 
+def build_attachment_index(vault: Path) -> set:
+    """볼트 내 첨부파일(.md 아닌 파일) 이름 집합.
+
+    `![[다이어그램.png]]` 같은 임베드는 노트가 아니라 첨부를 가리킨다.
+    링크 인덱스에는 .md만 들어가므로 이것만으로는 전부 깨진 링크로 잡힌다.
+    """
+    names = set()
+    for path in vault.rglob("*"):
+        if not path.is_file() or path.suffix.lower() == ".md":
+            continue
+        rel = path.relative_to(vault)
+        if rel.parts and rel.parts[0] in {".git", ".obsidian", "node_modules"}:
+            continue
+        names.add(path.name)
+    return names
+
+
 def build_link_index(records: list) -> dict:
     """stem -> [FileRecord] 링크 인덱스 (항상 전체 볼트 기준)"""
     index = defaultdict(list)
@@ -431,21 +448,30 @@ def count_broken_links(records: list) -> int:
     )
 
 
-def check_links(records: list, scope: str) -> dict:
+def check_links(records: list, scope: str, vault: Path = None) -> dict:
     index = build_link_index(records)
+    attachments = build_attachment_index(vault) if vault else set()
 
-    broken, ambiguous, section_errors = [], [], []
+    broken, ambiguous, section_errors, relative = [], [], [], []
     total_links = 0
     for rec in records:
         if not in_scope(rec, scope):
             continue
         for line_num, target, section, raw in rec.links:
             if "../" in target:
-                continue  # 상대경로 링크는 검증 제외 (고아 판정에는 반영됨)
+                # CLAUDE.md는 상대경로 위키링크를 금지한다. 해석되는지와 무관하게
+                # 위반이므로 보고하고, 정규화할 basename 후보를 함께 제시한다
+                basename = Path(target).stem
+                suggestion = basename if _resolve(index, basename) else None
+                relative.append((rec.rel, line_num, target, suggestion, raw))
+                continue
             total_links += 1
             entry = (rec.rel, line_num, target, section, raw)
             matches = _resolve(index, target)
             if not matches:
+                # 첨부 임베드(![[다이어그램.png]])는 노트가 아니라 파일을 가리킨다
+                if target.rsplit("/", 1)[-1] in attachments:
+                    continue
                 broken.append(entry)
             elif len(matches) > 1:
                 ambiguous.append(entry)
@@ -505,10 +531,27 @@ def check_links(records: list, scope: str) -> dict:
             print(f"    {raw}")
             print(f"    ❌ 섹션 없음: #{section}")
 
+    if relative:
+        print(f"\n{YELLOW}{BOLD}📐 상대경로 링크 (CLAUDE.md 금지):{RESET}")
+        by_file = defaultdict(list)
+        for entry in relative:
+            by_file[entry[0]].append(entry)
+        for rel, entries in list(by_file.items())[:15]:
+            print(f"\n  📄 {CYAN}{rel}{RESET}")
+            for _, line_num, target, suggestion, raw in entries[:5]:
+                print(f"    Line {line_num}: {YELLOW}{raw}{RESET}")
+                if suggestion:
+                    print(f"      💡 정규화: [[{suggestion}]]")
+                else:
+                    print("      ⚠️  대상 미존재 — 수동 확인 필요")
+        if len(by_file) > 15:
+            print(f"\n  ... 외 {len(by_file) - 15}개 파일")
+
     return {
         "깨진 링크": len(broken),
         "모호한 링크": len(ambiguous),
         "섹션 오류": len(section_errors),
+        "상대경로 링크": len(relative),
     }
 
 
@@ -903,7 +946,7 @@ def main():
     if "structure" in checks:
         summary.update(check_structure(records, scope, args.stale_days, vault))
     if "links" in checks:
-        summary.update(check_links(records, scope))
+        summary.update(check_links(records, scope, vault))
     if "meta" in checks:
         summary.update(check_meta(records, scope))
     if "tags" in checks:
