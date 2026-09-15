@@ -18,6 +18,22 @@ Obsidian vault management and automation scripts integrated with Claude Code ski
 
 - **skill-reviewer** - Collect skill/agent metadata and real invocation counts from Claude Code transcripts for periodic quality review (used by the `vault-skill-review` skill)
 
+## Tests
+
+Fixture-based regression tests, standard library `unittest` only — no extra dependencies. Each builds a throwaway vault in a temp directory, calls the target functions, and asserts on the result; the real vault is never touched.
+
+| Test | Covers | Count |
+|---|---|---|
+| `vault-lint/test_vault_lint.py` | scan scope, structure, links, metadata, tags, deterministic output | 28 |
+| `concept-analyzer/test_analyze_concepts.py` | graph metrics, dangling/malformed links, naming mismatch, crosslinks, mining | 17 |
+| `vault-management/test_vault_report.py` | date parsing, section rendering, preserved review notes, coverage stats | 18 |
+
+Run after changing a script:
+
+```bash
+cd vault-lint && python3 -m unittest test_vault_lint -v
+```
+
 ## Usage
 
 Each script is integrated with Claude Code skills or agents. See individual script directories for detailed documentation.
