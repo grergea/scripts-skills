@@ -149,6 +149,22 @@ class MetaChecks(VaultLintTestCase):
 
         self.assertEqual(summary["메타데이터 이슈"], 1)
 
+    def test_spaced_tag_detected(self):
+        fm = DEFAULT_FM.replace("tags: []", 'tags:\n  - "AI Tool"\n  - CDN')
+        write_note(self.vault, "02_Areas/SpacedTag.md", fm)
+
+        summary = run_quietly(vault_lint.check_meta, self.scan(), None)
+
+        self.assertEqual(summary["메타데이터 이슈"], 1)
+
+    def test_hyphenated_tag_accepted(self):
+        fm = DEFAULT_FM.replace("tags: []", "tags:\n  - web-performance\n  - CDN")
+        write_note(self.vault, "02_Areas/GoodTag.md", fm)
+
+        summary = run_quietly(vault_lint.check_meta, self.scan(), None)
+
+        self.assertEqual(summary["메타데이터 이슈"], 0)
+
     def test_duplicate_tags_detected(self):
         fm = DEFAULT_FM.replace("tags: []", "tags:\n  - CDN\n  - CDN")
         write_note(self.vault, "02_Areas/DupTags.md", fm)
@@ -293,6 +309,46 @@ class TagChecks(VaultLintTestCase):
         summary = run_quietly(vault_lint.check_tags, self.scan(), 70)
 
         self.assertEqual(summary["유사 태그 쌍"], 1)
+
+    def test_wikilink_anchor_is_not_a_tag(self):
+        write_note(
+            self.vault,
+            "02_Areas/A.md",
+            DEFAULT_FM,
+            "목차 [[가이드#관련 개념]] 와 [[#0. 지원 프로토콜]] 참조",
+        )
+
+        summary = run_quietly(vault_lint.check_tags, self.scan(), 70)
+
+        self.assertEqual(summary["드문 태그"], 0)
+
+    def test_url_fragment_is_not_a_tag(self):
+        write_note(
+            self.vault,
+            "02_Areas/A.md",
+            DEFAULT_FM,
+            "참고 https://cloud.google.com/docs/set-up#enable-api 링크",
+        )
+
+        summary = run_quietly(vault_lint.check_tags, self.scan(), 70)
+
+        self.assertEqual(summary["드문 태그"], 0)
+
+    def test_numeric_only_tag_rejected(self):
+        write_note(
+            self.vault, "02_Areas/A.md", DEFAULT_FM, "PR #15238 과 이슈 #207 참고"
+        )
+
+        summary = run_quietly(vault_lint.check_tags, self.scan(), 70)
+
+        self.assertEqual(summary["드문 태그"], 0)
+
+    def test_real_inline_tag_still_detected(self):
+        write_note(self.vault, "02_Areas/A.md", DEFAULT_FM, "본문에 #실제태그 있음")
+
+        summary = run_quietly(vault_lint.check_tags, self.scan(), 70)
+
+        self.assertEqual(summary["드문 태그"], 1)
 
     def test_dissimilar_tags_not_paired(self):
         write_note(

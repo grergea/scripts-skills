@@ -106,6 +106,17 @@ RESET = "\033[0m"
 FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 INLINE_TAG_PATTERN = re.compile(r"#([a-zA-Z0-9가-힣_-]+(?:/[a-zA-Z0-9가-힣_-]+)*)")
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]")
+# 인라인 태그 추출 시 걷어낼 구간 — 이 안의 '#'는 태그가 아니라 URL
+# 프래그먼트(.../docs#enable-api), 위키링크 섹션 앵커([[노트#섹션]]),
+# 마크다운 링크 타겟([표시](#2-내부-상태-코드))이다
+URL_PATTERN = re.compile(r"https?://\S+")
+WIKILINK_ANY_PATTERN = re.compile(r"\[\[[^\]]*\]\]")
+MD_LINK_TARGET_PATTERN = re.compile(r"\]\([^)]*\)")
+
+
+def is_inline_tag(tag: str) -> bool:
+    """Obsidian은 숫자만으로 이루어진 태그를 태그로 인정하지 않는다 (#123, #15238)."""
+    return not tag.replace("/", "").isdigit()
 
 
 # ──────────────────────────────────────────
@@ -588,6 +599,22 @@ def check_meta(records: list, scope: str) -> dict:
 
         tags = fm.get("tags")
         if isinstance(tags, list):
+            # 공백이 든 태그는 Obsidian에서 태그로 동작하지 않는다
+            # (CLAUDE.md 태그 규칙: 복합어는 소문자-하이픈 연결)
+            spaced = sorted(
+                t.strip() for t in tags if isinstance(t, str) and " " in t.strip()
+            )
+            if spaced:
+                issues.append(
+                    (
+                        rec.rel,
+                        "invalid",
+                        "tags",
+                        f"공백이 포함된 태그는 Obsidian에서 동작하지 않습니다 "
+                        f"(하이픈 연결 필요): {', '.join(spaced)}",
+                    )
+                )
+
             dup_tags = sorted({str(t) for t in tags if tags.count(t) > 1})
             if dup_tags:
                 issues.append(
@@ -667,11 +694,15 @@ def check_tags(records: list, min_similarity: int, export_json: str = None) -> d
             for tag in fm["tags"]:
                 if isinstance(tag, str) and tag.lstrip("#").strip():
                     tags.add(tag.lstrip("#").strip())
-        # 인라인 태그 (frontmatter·코드블록 제거 후)
+        # 인라인 태그 (frontmatter·코드블록·URL·위키링크 제거 후)
         body = FRONTMATTER_PATTERN.sub("", rec.content)
         body = re.sub(r"```[\s\S]*?```|`[^`]+`", "", body)
+        body = URL_PATTERN.sub(" ", body)
+        body = WIKILINK_ANY_PATTERN.sub(" ", body)
+        body = MD_LINK_TARGET_PATTERN.sub(" ", body)
         for m in INLINE_TAG_PATTERN.finditer(body):
-            tags.add(m.group(1))
+            if is_inline_tag(m.group(1)):
+                tags.add(m.group(1))
         for tag in sorted(tags):
             tag_frequency[tag] += 1
 
