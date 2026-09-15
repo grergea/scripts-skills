@@ -167,6 +167,38 @@ class MetaChecks(VaultLintTestCase):
         self.assertEqual(summary["Frontmatter 없음"], 1)
 
 
+class ScanScopeChecks(VaultLintTestCase):
+    """볼트 안의 코드 저장소·도구 산출물은 노트가 아니므로 스캔에서 빠져야 한다."""
+
+    def test_vault_repos_excluded(self):
+        write_note(self.vault, "02_Areas/Real-Note.md", DEFAULT_FM)
+        # Claude Code 스킬 정의 — 노트 frontmatter 스키마 대상이 아님
+        write_note(
+            self.vault,
+            "project-rorobot/solonbot/skills/foo/SKILL.md",
+            "name: foo\ndescription: bar",
+        )
+        write_note(self.vault, "cdnw-api-tools/README.md", "name: tool")
+        write_note(self.vault, "html-share/CLAUDE.md", "name: share")
+
+        scanned = {r.rel for r in self.scan()}
+
+        self.assertIn("02_Areas/Real-Note.md", scanned)
+        self.assertNotIn("project-rorobot/solonbot/skills/foo/SKILL.md", scanned)
+        self.assertNotIn("cdnw-api-tools/README.md", scanned)
+        self.assertNotIn("html-share/CLAUDE.md", scanned)
+
+    def test_tool_artifacts_excluded_at_any_depth(self):
+        write_note(self.vault, ".pytest_cache/README.md", "x: 1")
+        write_note(self.vault, "02_Areas/sub/.pytest_cache/README.md", "x: 1")
+        write_note(self.vault, "02_Areas/sub/__pycache__/cached.md", "x: 1")
+        write_note(self.vault, "02_Areas/Keep.md", DEFAULT_FM)
+
+        scanned = {r.rel for r in self.scan()}
+
+        self.assertEqual(scanned, {"이상훈.md", "02_Areas/Keep.md"})
+
+
 class DeterminismChecks(VaultLintTestCase):
     """같은 입력 → 같은 출력. set 순회에 의존하면 실행마다 순서가 흔들렸다."""
 

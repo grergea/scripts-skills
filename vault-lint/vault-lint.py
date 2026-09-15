@@ -40,11 +40,19 @@ EXCLUDE_SCAN_DIRS = {
     "scripts-local",
     "ons-api-tools",
     "skills-gws",
+    # 볼트 안에 사는 git 저장소 — 코드이지 PARA 노트가 아니다. SKILL.md는 Claude Code
+    # 스킬 정의(name/description/script)라 노트 스키마 적용 대상이 아니며, 제외 전
+    # 메타데이터 이슈의 97%가 여기서 발생했다
+    "project-rorobot",
+    "cdnw-api-tools",
+    "html-share",
     "01_Projects",  # 기한이 있는 활성 프로젝트 — 완료 시 04_Archive로 이동, 외부 도구 스캐폴딩 포함
     "04_Archive",
     "05_Attachments",
 }
 EXCLUDE_SCAN_PREFIXES = {"06_Metadata/Templates"}
+# 도구 산출물 — 깊이와 무관하게 어디에 생기든 제외 (EXCLUDE_SCAN_DIRS는 최상위만 검사)
+EXCLUDE_SCAN_ANY_DEPTH = {".pytest_cache", "__pycache__", "node_modules", ".venv"}
 
 # 링크 인덱스에서 제외할 파일명 (링크 타겟으로 부적절한 설정 파일)
 EXCLUDE_LINK_TARGETS = {"CLAUDE", "GEMINI", "AGENTS"}
@@ -148,6 +156,8 @@ class FileRecord:
 def is_scan_excluded(path: Path, vault: Path) -> bool:
     rel = path.relative_to(vault)
     if rel.parts and rel.parts[0] in EXCLUDE_SCAN_DIRS:
+        return True
+    if any(part in EXCLUDE_SCAN_ANY_DEPTH for part in rel.parts):
         return True
     rel_str = str(rel)
     return any(rel_str.startswith(p) for p in EXCLUDE_SCAN_PREFIXES)
