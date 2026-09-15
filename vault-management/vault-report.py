@@ -275,6 +275,39 @@ def load_history(output_path: Path) -> list[str]:
     return [r for r in rows if not r.startswith(f"| {today} ")]
 
 
+REVIEW_NOTES_HEADING = "## 검토 메모"
+REVIEW_NOTES_PLACEHOLDER = (
+    "> 이 섹션만 재생성 대상에서 제외됩니다. 보류하기로 한 항목이나 판단 근거를\n"
+    "> 여기에 적어두면 다음 실행에서도 남습니다. (나머지 섹션은 매번 덮어써집니다)"
+)
+
+
+def load_review_notes(output_path: Path) -> str:
+    """기존 리포트의 '검토 메모' 섹션 본문 로드.
+
+    리포트는 매 실행마다 전체를 덮어쓰므로, 사람이 적어둔 판단(보류 결정 등)은
+    이 섹션에 한해 읽어서 그대로 되돌려 넣는다. 안내 문구만 있으면 빈 값 취급.
+    """
+    if not output_path.exists():
+        return ""
+    text = output_path.read_text(encoding="utf-8")
+    m = re.search(rf"{REVIEW_NOTES_HEADING}\n(.*?)(?:\n## |\Z)", text, re.DOTALL)
+    if not m:
+        return ""
+    body = "\n".join(
+        line for line in m.group(1).splitlines() if not line.startswith(">")
+    ).strip()
+    return body
+
+
+def section_review_notes(preserved: str) -> str:
+    lines = [f"{REVIEW_NOTES_HEADING}\n", REVIEW_NOTES_PLACEHOLDER]
+    if preserved:
+        lines.append("")
+        lines.append(preserved)
+    return "\n".join(lines)
+
+
 def section_history(
     prev_rows: list[str],
     clips_n: int,
@@ -333,6 +366,7 @@ def main():
 
     output_path = OUTPUT_DIR / f"Concept_Review_{month_str}.md"
     history_rows = load_history(output_path)
+    review_notes = load_review_notes(output_path)
 
     # 같은 달 재실행 시 기존 created 날짜 보존
     created = today
@@ -365,6 +399,7 @@ status: inProgress
             section_coverage(stats),
             section_link_health(broken, isolated),
             section_actions(clips, tech, personal, broken, isolated, unlinked),
+            section_review_notes(review_notes),
             section_history(
                 history_rows,
                 len(clips),

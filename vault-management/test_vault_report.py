@@ -131,6 +131,55 @@ class LoadHistoryTests(unittest.TestCase):
         self.assertFalse(any(str(vault_report.today) in r for r in rows))
 
 
+class ReviewNotesTests(unittest.TestCase):
+    """리포트는 매 실행 전체를 덮어쓴다. '검토 메모'만 살아남아야 한다."""
+
+    def _write(self, tmpdir: str, body: str) -> Path:
+        path = Path(tmpdir) / "report.md"
+        path.write_text(body, encoding="utf-8")
+        return path
+
+    def test_preserves_hand_written_notes(self):
+        content = (
+            "## 권장 액션\n\n- 깨진 링크 수정\n\n"
+            f"{vault_report.REVIEW_NOTES_HEADING}\n"
+            f"{vault_report.REVIEW_NOTES_PLACEHOLDER}\n\n"
+            "깨진 링크 800건은 2026-07-14 검토 완료, 보류.\n\n"
+            "## 점검 이력\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            preserved = vault_report.load_review_notes(self._write(tmpdir, content))
+
+        self.assertIn("2026-07-14 검토 완료, 보류", preserved)
+        self.assertNotIn(">", preserved)
+
+    def test_placeholder_only_reads_as_empty(self):
+        content = (
+            f"{vault_report.REVIEW_NOTES_HEADING}\n"
+            f"{vault_report.REVIEW_NOTES_PLACEHOLDER}\n\n"
+            "## 점검 이력\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            preserved = vault_report.load_review_notes(self._write(tmpdir, content))
+
+        self.assertEqual(preserved, "")
+
+    def test_missing_section_reads_as_empty(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(tmpdir, "## 권장 액션\n\n- 항목\n")
+            self.assertEqual(vault_report.load_review_notes(path), "")
+            self.assertEqual(
+                vault_report.load_review_notes(Path(tmpdir) / "없는파일.md"), ""
+            )
+
+    def test_round_trip_survives_regeneration(self):
+        note = "깨진 링크는 보류하기로 결정."
+        rendered = vault_report.section_review_notes(note)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write(tmpdir, rendered + "\n\n## 점검 이력\n")
+            self.assertEqual(vault_report.load_review_notes(path), note)
+
+
 class RecordBasedTests(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
