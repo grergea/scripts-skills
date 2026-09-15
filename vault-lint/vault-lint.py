@@ -830,7 +830,7 @@ def main():
         print(f"\n  {GREEN}{BOLD}✅ 볼트 상태 양호!{RESET}")
     else:
         print(f"\n  {YELLOW}총 {total_issues}개 항목이 개선을 필요로 합니다.{RESET}")
-        print(f"  {YELLOW}/lint 스킬로 Claude에게 수정을 요청하세요.{RESET}")
+        print(f"  {YELLOW}/vault-lint 스킬로 Claude에게 수정을 요청하세요.{RESET}")
     print()
 
 
