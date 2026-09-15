@@ -87,6 +87,9 @@ TYPE_REQUIRED_FIELDS = {
     "people": {"organization", "group", "role"},
     "script": {"language"},
 }
+# 기준(base) 장애보고서 표식 — 고객사별 파생본의 원본이라 customer를 의도적으로
+# 비워 두고 가변 값은 플레이스홀더로 남긴다 (.claude/rules/troubleshooting-notes.md)
+BASE_REPORT_MARKER = "파생 시 기입"
 VALID_STATUS = {"inProgress", "completed", "archived"}
 PEOPLE_VALID_STATUS = {"active", "inactive"}  # people 노트는 active/inactive 사용
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -494,7 +497,10 @@ def check_meta(records: list, scope: str) -> dict:
                 )
 
         note_type = fm.get("type")
-        for field in sorted(TYPE_REQUIRED_FIELDS.get(note_type, set())):
+        required = set(TYPE_REQUIRED_FIELDS.get(note_type, set()))
+        if note_type == "troubleshooting" and BASE_REPORT_MARKER in rec.content:
+            required.discard("customer")
+        for field in sorted(required):
             if field not in fm:
                 issues.append(
                     (

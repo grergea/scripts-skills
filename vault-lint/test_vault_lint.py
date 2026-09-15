@@ -157,6 +157,32 @@ class MetaChecks(VaultLintTestCase):
 
         self.assertEqual(summary["메타데이터 이슈"], 1)
 
+    def test_troubleshooting_requires_customer(self):
+        fm = DEFAULT_FM.replace("type: note", "type: troubleshooting")
+        fm += '\nresponder:\n  - "[[이상훈]]"'
+        write_note(
+            self.vault, "02_Areas/Derived.md", fm, "### 1. 장애 개요\n- 대상: A사"
+        )
+
+        summary = run_quietly(vault_lint.check_meta, self.scan(), None)
+
+        self.assertEqual(summary["메타데이터 이슈"], 1)
+
+    def test_base_report_exempt_from_customer(self):
+        # 기준 보고서는 고객사별 파생본의 원본이라 customer를 의도적으로 비운다
+        fm = DEFAULT_FM.replace("type: note", "type: troubleshooting")
+        fm += '\nresponder:\n  - "[[이상훈]]"'
+        write_note(
+            self.vault,
+            "02_Areas/Base.md",
+            fm,
+            "- **수신**: [고객사명 - 파생 시 기입]\n\n### 1. 장애 개요",
+        )
+
+        summary = run_quietly(vault_lint.check_meta, self.scan(), None)
+
+        self.assertEqual(summary["메타데이터 이슈"], 0)
+
     def test_no_frontmatter_detected(self):
         path = self.vault / "02_Areas" / "NoFrontmatter.md"
         path.parent.mkdir(parents=True, exist_ok=True)
