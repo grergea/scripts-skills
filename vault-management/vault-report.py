@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 vault-report.py
-볼트 현황 리포트 생성기. /lint 스킬의 Phase 1 입력 소스 (수동 실행).
+볼트 현황 리포트 생성기. /vault-lint 스킬의 Phase 1 입력 소스 (수동 실행).
 리포트는 월 단위(Concept_Review_YYYY-MM.md)로 관리 — 같은 달 재실행 시
 최신 현황 섹션은 갱신하고 '점검 이력' 테이블에 실행 결과를 누적한다.
 - 미처리 클리핑 알림 (00_Inbox/Clippings*, 30일 초과)
@@ -13,6 +13,7 @@ vault-report.py
 """
 
 import re
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -217,8 +218,8 @@ def section_link_health(broken: int, isolated: int) -> str:
         "## 링크 건강도\n",
         "| 항목 | 현황 | 권장 액션 |",
         "|------|------|---------|",
-        f"| 깨진 위키링크 | {broken_status} | `/lint fix:links` |",
-        f"| #isolated Concept | {isolated_status} | `@concept-analyzer` → `/autoresearch` |",
+        f"| 깨진 위키링크 | {broken_status} | `/vault-lint fix:links` |",
+        f"| #isolated Concept | {isolated_status} | `/vault-concept-analyzer` → 필요 시 `/vault-ingest` |",
     ]
     return "\n".join(lines)
 
@@ -233,17 +234,17 @@ def section_actions(
 ) -> str:
     actions = []
     if broken > 0:
-        actions.append(f"- 깨진 링크 수정: {broken}개 → `/lint fix:links`")
+        actions.append(f"- 깨진 링크 수정: {broken}개 → `/vault-lint fix:links`")
     if isolated > 0:
         actions.append(
-            f"- 고립 Concept 연결: {isolated}개 → `@concept-analyzer` → `/autoresearch`"
+            f"- 고립 Concept 연결: {isolated}개 → `/vault-concept-analyzer` → 필요 시 `/vault-ingest`"
         )
     for c in clips[:5]:
         actions.append(f"- 클리핑 소화: `{c['name']}` ({c['days_old']}일 경과)")
     for u in unlinked[:5]:
         updated = u["updated"] or "-"
         actions.append(
-            f"- Concept 반영: `{u['name']}` ({u['area']}, 갱신 {updated}) → `/ingest`"
+            f"- Concept 반영: `{u['name']}` ({u['area']}, 갱신 {updated}) → `/vault-ingest`"
         )
     if personal < tech * 0.15:
         actions.append(
