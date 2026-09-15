@@ -148,6 +148,34 @@ class LinkIntegrity(AnalyzerTestCase):
         }
         self.assertEqual(mismatches.get("CorrectName"), "Correct-Name")
 
+    def test_naming_mismatch_prefers_convention_compliant_name(self):
+        # 같은 키로 정규화되는 파일이 둘 있으면 CLAUDE.md 규칙(공백 불가)을
+        # 지키는 쪽을 제안해야 한다. set 순회에 맡기면 실행마다 뒤바뀌었다.
+        write_plain(self.vault_root / "02_Areas" / "Exclusive IP.md")
+        write_plain(self.vault_root / "02_Areas" / "Exclusive-IP.md")
+        write_concept(self.concepts_tech, "A", body="[[ExclusiveIP]]")
+
+        analyzer = self.analyze()
+        stats = run_quietly(analyzer.generate_statistics)
+
+        mismatches = {
+            item["link"]: item["correct"] for item in stats["naming_mismatches"]
+        }
+        self.assertEqual(mismatches.get("ExclusiveIP"), "Exclusive-IP")
+
+    def test_normalized_index_is_stable_and_convention_first(self):
+        index = analyze_concepts.build_normalized_index(
+            {"Exclusive IP", "Exclusive-IP", "Rate Limiting", "Rate-Limiting"}
+        )
+
+        self.assertEqual(index["exclusiveip"], "Exclusive-IP")
+        self.assertEqual(index["ratelimiting"], "Rate-Limiting")
+        # 입력 순서가 달라도 같은 결과여야 한다
+        reversed_input = analyze_concepts.build_normalized_index(
+            ["Rate-Limiting", "Exclusive-IP", "Rate Limiting", "Exclusive IP"]
+        )
+        self.assertEqual(index, reversed_input)
+
     def test_valid_link_not_dangling(self):
         write_concept(self.concepts_tech, "A", body="[[B]]")
         write_concept(self.concepts_tech, "B")
