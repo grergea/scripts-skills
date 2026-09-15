@@ -477,14 +477,14 @@ def check_meta(records: list, scope: str) -> dict:
 
         before = len(issues)
 
-        for field in REQUIRED_FIELDS:
+        for field in sorted(REQUIRED_FIELDS):
             if field not in fm:
                 issues.append(
                     (rec.rel, "missing", field, f"필수 필드 '{field}'가 누락되었습니다")
                 )
 
         note_type = fm.get("type")
-        for field in TYPE_REQUIRED_FIELDS.get(note_type, set()):
+        for field in sorted(TYPE_REQUIRED_FIELDS.get(note_type, set())):
             if field not in fm:
                 issues.append(
                     (
@@ -656,7 +656,7 @@ def check_tags(records: list, min_similarity: int, export_json: str = None) -> d
         body = re.sub(r"```[\s\S]*?```|`[^`]+`", "", body)
         for m in INLINE_TAG_PATTERN.finditer(body):
             tags.add(m.group(1))
-        for tag in tags:
+        for tag in sorted(tags):
             tag_frequency[tag] += 1
 
     threshold = min_similarity / 100.0
@@ -670,7 +670,9 @@ def check_tags(records: list, min_similarity: int, export_json: str = None) -> d
             score += 0.1
         return min(score, 1.0)
 
-    tags = list(tag_frequency.keys())
+    # 정렬 고정 — set에서 유입된 삽입 순서를 그대로 쓰면 유사 태그 쌍의
+    # 동률 정렬 결과가 실행마다 달라진다
+    tags = sorted(tag_frequency.keys())
     similar_pairs = []
     for i, t1 in enumerate(tags):
         for t2 in tags[i + 1 :]:
@@ -679,7 +681,7 @@ def check_tags(records: list, min_similarity: int, export_json: str = None) -> d
             score = similarity(t1, t2)
             if score >= threshold:
                 similar_pairs.append((t1, t2, score))
-    similar_pairs.sort(key=lambda x: x[2], reverse=True)
+    similar_pairs.sort(key=lambda x: (-x[2], x[0], x[1]))
 
     rare_tags = {t: c for t, c in tag_frequency.items() if c <= 2}
     nested_tags = {t for t in tag_frequency if "/" in t}
@@ -692,7 +694,8 @@ def check_tags(records: list, min_similarity: int, export_json: str = None) -> d
     print(f"  🔸 드문 태그 (1-2회): {len(rare_tags)}개")
 
     print(f"\n{BOLD}{GREEN}🏆 Top 20 Most Used Tags:{RESET}")
-    for i, (tag, count) in enumerate(tag_frequency.most_common(20), 1):
+    top_tags = sorted(tag_frequency.items(), key=lambda x: (-x[1], x[0]))[:20]
+    for i, (tag, count) in enumerate(top_tags, 1):
         print(f"  {i:2d}. #{GREEN}{tag}{RESET} ({count}회)")
 
     if similar_pairs:
@@ -709,7 +712,7 @@ def check_tags(records: list, min_similarity: int, export_json: str = None) -> d
     if rare_tags:
         print(f"\n{BLUE}{BOLD}🔸 Rare Tags (1-2회 사용):{RESET}")
         for i, (tag, count) in enumerate(
-            sorted(rare_tags.items(), key=lambda x: x[1])[:20], 1
+            sorted(rare_tags.items(), key=lambda x: (x[1], x[0]))[:20], 1
         ):
             print(f"  {i:2d}. #{BLUE}{tag}{RESET} ({count}회)")
         if len(rare_tags) > 20:

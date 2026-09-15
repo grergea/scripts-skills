@@ -167,6 +167,42 @@ class MetaChecks(VaultLintTestCase):
         self.assertEqual(summary["Frontmatter 없음"], 1)
 
 
+class DeterminismChecks(VaultLintTestCase):
+    """같은 입력 → 같은 출력. set 순회에 의존하면 실행마다 순서가 흔들렸다."""
+
+    def _capture(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            records = vault_lint.scan_vault(self.vault)
+            vault_lint.check_meta(records, None)
+            vault_lint.check_tags(records, 70)
+        return buf.getvalue()
+
+    def test_output_is_identical_across_runs(self):
+        for name in ("Alpha", "Beta", "Gamma"):
+            write_note(self.vault, f"02_Areas/{name}.md", "type: note")
+        write_note(
+            self.vault,
+            "02_Areas/Tagged.md",
+            DEFAULT_FM.replace("tags: []", "tags:\n  - concept\n  - concepts\n  - CDN"),
+        )
+
+        self.assertEqual(self._capture(), self._capture())
+
+    def test_missing_field_report_order_is_sorted(self):
+        write_note(self.vault, "02_Areas/Bare.md", "type: note")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            vault_lint.check_meta(self.scan(), None)
+        out = buf.getvalue()
+
+        fields = [
+            f for f in ("author", "created", "status", "tags", "updated") if f in out
+        ]
+        self.assertEqual(fields, sorted(fields))
+
+
 class TagChecks(VaultLintTestCase):
     def test_similar_tag_pair_plural_detected(self):
         write_note(

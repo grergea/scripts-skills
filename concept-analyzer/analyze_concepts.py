@@ -155,7 +155,7 @@ class ConceptAnalyzer:
             "created": str(frontmatter.get("created", "")),
             "updated": str(frontmatter.get("updated", "")),
             "status": frontmatter.get("status", ""),
-            "outlinks": list(outlinks),
+            "outlinks": sorted(outlinks),
             "outlinks_count": len(outlinks),
             "has_mermaid": self.has_mermaid(body),
             "word_count": self.count_words(body),
@@ -169,7 +169,7 @@ class ConceptAnalyzer:
         # 0차: 볼트 전체 파일명 인덱스 생성 (dangling link 탐지용)
         self._build_vault_file_index()
 
-        md_files = list(self.concepts_path.glob("*.md"))
+        md_files = sorted(self.concepts_path.glob("*.md"))
 
         print(
             f"Found {len(md_files)} markdown files in {self.concepts_path}",
@@ -184,7 +184,7 @@ class ConceptAnalyzer:
 
         # 2차: inlinks 계산
         for filename, concept in self.concepts.items():
-            concept["inlinks"] = list(self.backlinks.get(filename, set()))
+            concept["inlinks"] = sorted(self.backlinks.get(filename, set()))
             concept["inlinks_count"] = len(concept["inlinks"])
             concept["total_links"] = (
                 concept["inlinks_count"] + concept["outlinks_count"]
@@ -239,7 +239,9 @@ class ConceptAnalyzer:
             for c in self.concepts.values()
             if c["inlinks_count"] < 2
         ]
-        isolated_concepts.sort(key=lambda x: (x["inlinks_count"], x["outlinks_count"]))
+        isolated_concepts.sort(
+            key=lambda x: (x["inlinks_count"], x["outlinks_count"], x["filename"])
+        )
 
         # 약한 연결 개념 (outlinks < 3)
         weak_concepts = [
@@ -251,7 +253,9 @@ class ConceptAnalyzer:
             for c in self.concepts.values()
             if c["outlinks_count"] < 3
         ]
-        weak_concepts.sort(key=lambda x: (x["outlinks_count"], -x["inlinks_count"]))
+        weak_concepts.sort(
+            key=lambda x: (x["outlinks_count"], -x["inlinks_count"], x["filename"])
+        )
 
         # 허브 개념 (total_links 상위)
         hub_concepts = sorted(
@@ -265,8 +269,7 @@ class ConceptAnalyzer:
                 }
                 for c in self.concepts.values()
             ],
-            key=lambda x: x["total_links"],
-            reverse=True,
+            key=lambda x: (-x["total_links"], x["filename"]),
         )[:15]
 
         # 태그 형식 오류 파일 (dict 태그 포함)
@@ -318,12 +321,12 @@ class ConceptAnalyzer:
 
         dangling_links = [
             {"target": target, "referenced_by": sorted(sources)}
-            for target, sources in sorted(dangling.items(), key=lambda x: -len(x[1]))
+            for target, sources in sorted(dangling.items(), key=lambda x: (-len(x[1]), x[0]))
         ]
         malformed_link_list = [
             {"target": target, "referenced_by": sorted(sources)}
             for target, sources in sorted(
-                malformed_links.items(), key=lambda x: -len(x[1])
+                malformed_links.items(), key=lambda x: (-len(x[1]), x[0])
             )
         ]
         naming_mismatch_list = [
@@ -333,7 +336,7 @@ class ConceptAnalyzer:
                 "referenced_by": sorted(set(e["source"] for e in entries)),
             }
             for link, entries in sorted(
-                naming_mismatches.items(), key=lambda x: -len(x[1])
+                naming_mismatches.items(), key=lambda x: (-len(x[1]), x[0])
             )
         ]
 
@@ -348,7 +351,9 @@ class ConceptAnalyzer:
             "mermaid_rate": round(mermaid_rate, 1),
             "avg_words": round(avg_words, 0),
             "avg_sections": round(avg_sections, 1),
-            "tag_distribution": dict(tag_distribution.most_common(20)),
+            "tag_distribution": dict(
+                sorted(tag_distribution.items(), key=lambda x: (-x[1], x[0]))[:20]
+            ),
             "isolated_concepts": isolated_concepts[:15],
             "weak_concepts": weak_concepts[:15],
             "hub_concepts": hub_concepts,
@@ -400,8 +405,8 @@ def analyze_crosslinks(analyzer_a, analyzer_b):
     return {
         "a_to_b_total": sum(a_to_b.values()),
         "b_to_a_total": sum(b_to_a.values()),
-        "a_to_b_top": sorted(a_to_b.items(), key=lambda x: -x[1])[:10],
-        "b_to_a_top": sorted(b_to_a.items(), key=lambda x: -x[1])[:10],
+        "a_to_b_top": sorted(a_to_b.items(), key=lambda x: (-x[1], x[0]))[:10],
+        "b_to_a_top": sorted(b_to_a.items(), key=lambda x: (-x[1], x[0]))[:10],
         "path_a": str(analyzer_a.concepts_path.relative_to(analyzer_a.vault_root)),
         "path_b": str(analyzer_b.concepts_path.relative_to(analyzer_b.vault_root)),
     }
@@ -855,7 +860,7 @@ class ConceptMiner:
         for kw, unique_files in keyword_sources.items():
             if len(unique_files) >= 2 and kw not in all_candidates:
                 all_candidates[kw] = {
-                    "sources": list(unique_files),
+                    "sources": sorted(unique_files),
                     "category": keyword_category.get(kw, "Tech"),
                     "method": "keyword",
                     "count": keyword_counter[kw],

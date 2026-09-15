@@ -187,6 +187,30 @@ class LinkIntegrity(AnalyzerTestCase):
         self.assertNotIn("B", dangling_targets)
 
 
+class DeterminismChecks(AnalyzerTestCase):
+    def test_statistics_identical_across_runs(self):
+        write_concept(self.concepts_tech, "Hub", body="[[A]] [[B]] [[C]]")
+        for n in ("A", "B", "C"):
+            write_concept(self.concepts_tech, n, body="[[Hub]] [[없는링크]]")
+
+        first = run_quietly(self.analyze().generate_statistics)
+        second = run_quietly(self.analyze().generate_statistics)
+
+        self.assertEqual(first, second)
+
+    def test_outlinks_and_inlinks_are_sorted(self):
+        write_concept(self.concepts_tech, "Zeta")
+        write_concept(self.concepts_tech, "Alpha")
+        write_concept(self.concepts_tech, "Mid", body="[[Zeta]] [[Alpha]]")
+        write_concept(self.concepts_tech, "Zref", body="[[Alpha]]")
+
+        analyzer = self.analyze()
+        run_quietly(analyzer.generate_statistics)
+
+        self.assertEqual(analyzer.concepts["Mid"]["outlinks"], ["Alpha", "Zeta"])
+        self.assertEqual(analyzer.concepts["Alpha"]["inlinks"], ["Mid", "Zref"])
+
+
 class CrossLinks(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
