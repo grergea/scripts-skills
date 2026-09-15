@@ -65,6 +65,14 @@ STRUCTURE_EXCLUDE_PREFIXES = {
     # 개인 참고 기록 (지식 그래프 노드 아님) — 개별 나열하면 폴더가 늘 때
     # 누락된다. 실제로 '개인_보험'이 빠져 오탐 4건이 있었다
     "02_Areas/개인_",
+    # Raw Source 보관함 — 들어오는 링크가 없다는 건 '아직 Concept으로 안 옮겼다'는
+    # 뜻이고, 그건 vault-report.py의 'Concept 반영률'이 이미 추적한다
+    "03_Resources/Tools",
+    "03_Resources/Books",
+    # 리서치 합성 노트 — 개념을 가리키는 출처 기록이라 들어오는 링크가 없는 게 정상
+    "03_Resources/Research",
+    # 시계열 기록 — 월별 주간보고 아카이브라 지식 그래프 노드가 아니다
+    "02_Areas/업무_회의록",
 }
 NON_NOTE_FILES = {
     "hot.md",
