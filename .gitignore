@@ -19,7 +19,4 @@ ENV/
 *.swp
 *.swo
 
-# Test files
-test_*.py
-*_test.py
 vault-report.log
